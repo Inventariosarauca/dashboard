@@ -256,7 +256,7 @@
       <div class="grid cols-2">
         <div class="card">
           <div class="card-head">
-            <h3><span class="acc"></span>Valor del inventario por categoría</h3>
+            <h3><span class="acc"></span>Cantidad de artículos por categoría</h3>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
               <div class="seg" id="chartType">
                 <button class="active" data-t="bar">Barras</button>
@@ -614,7 +614,7 @@ function buildChart(data){
   if(data) buildChart._d=data;
   data=buildChart._d||[];
   const map={};
-  data.forEach(r=>{ map[r.articulo]=(map[r.articulo]||0)+r.valor*r.cantidad; });
+  data.forEach(r=>{ map[r.articulo]=(map[r.articulo]||0)+r.cantidad; });
   const arr=Object.entries(map).sort((a,b)=>b[1]-a[1]);
   buildChart._arr=arr;
 
@@ -655,7 +655,7 @@ function renderChart(labels,data){
   chart=new Chart(ctx,{
     type:chartKind,
     data:{ labels,
-      datasets:[{ label:"Valor",
+      datasets:[{ label:"Cantidad",
         data,
         backgroundColor:isBar?"#f0890c":labels.map((_,i)=>COLORS[i%COLORS.length]),
         borderColor:isBar?"#cf6f00":"#ffffff",
@@ -668,10 +668,10 @@ function renderChart(labels,data){
       plugins:{
         legend:{display:!isBar, position:"right",
           labels:{color:"#5b6c80", font:{family:"DM Sans", size:11}, boxWidth:12, padding:8}},
-        tooltip:{callbacks:{label:c=>" "+money(c.parsed.x ?? c.parsed.y ?? c.parsed)}}
+        tooltip:{callbacks:{label:c=>{ const v=(c.parsed.x ?? c.parsed.y ?? c.parsed); return " "+Number(v).toLocaleString("es-CO")+" und."; }}}
       },
       scales:isBar?{
-        x:{ticks:{color:"#8595a8", callback:v=>moneyShort(v)}, grid:{color:"#e6ecf3"}},
+        x:{ticks:{color:"#8595a8", precision:0, callback:v=>Number(v).toLocaleString("es-CO")}, grid:{color:"#e6ecf3"}},
         y:{ticks:{color:"#5b6c80", font:{size:11}}, grid:{display:false}}
       }:{}
     }
