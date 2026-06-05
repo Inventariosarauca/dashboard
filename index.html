@@ -113,6 +113,21 @@
   .filters-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:13px}
   .panel-filters{position:static; margin-bottom:22px}
   .panel-filters .count{margin-right:14px}
+  .muni-bar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;
+    padding-bottom:14px; border-bottom:1px solid var(--line-soft)}
+  .muni-title{font-size:.72rem; font-weight:700; color:var(--txt-dim); text-transform:uppercase; letter-spacing:.5px}
+  .muni-chips{display:flex; gap:8px; flex-wrap:wrap}
+  .muni-chip{font-size:.8rem; font-weight:600; padding:6px 13px; border-radius:999px; cursor:pointer;
+    background:var(--bg); border:1px solid var(--line); color:var(--txt-dim); transition:.15s; user-select:none}
+  .muni-chip:hover{border-color:var(--teal)}
+  .muni-chip.on{background:linear-gradient(135deg,var(--teal),var(--teal-deep)); color:#fff; border-color:transparent}
+  .muni-chip .n{font-family:'JetBrains Mono'; opacity:.8; margin-left:5px; font-size:.72rem}
+  .chart-pager{display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:8px;
+    font-size:.8rem; color:var(--txt-dim)}
+  .chart-pager button{padding:5px 11px}
+  .chart-scroll{max-height:560px; overflow-y:auto}
+  .chart-scroll::-webkit-scrollbar{width:8px}
+  .chart-scroll::-webkit-scrollbar-thumb{background:var(--line); border-radius:8px}
   .nit-name{font-size:.8rem; font-weight:600; color:var(--teal-deep); margin-right:auto}
   .nit-name:empty{display:none}
   /* combo con búsqueda */
@@ -222,6 +237,10 @@
         <span class="chip">Puerto Rondón</span><span class="chip">Cubará</span>
       </div>
       <div class="filters panel-filters">
+        <div class="muni-bar">
+          <span class="muni-title">Municipios:</span>
+          <div class="muni-chips" id="muniChips"></div>
+        </div>
         <div class="filters-grid">
           <div class="fld"><label>Centro de costos</label><div class="combo" id="cpCentro"></div></div>
           <div class="fld"><label>Artículo</label><div class="combo" id="cpArticulo"></div></div>
@@ -238,12 +257,20 @@
         <div class="card">
           <div class="card-head">
             <h3><span class="acc"></span>Valor del inventario por categoría</h3>
-            <div class="seg" id="chartType">
-              <button class="active" data-t="bar">Barras</button>
-              <button data-t="doughnut">Anillo</button>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+              <div class="seg" id="chartType">
+                <button class="active" data-t="bar">Barras</button>
+                <button data-t="doughnut">Anillo</button>
+              </div>
+              <button class="btn ghost" id="chartAll" style="padding:6px 11px; font-size:.76rem">Ver todas</button>
             </div>
           </div>
-          <div class="chart-wrap"><canvas id="chartCat"></canvas></div>
+          <div class="chart-pager" id="chartPager">
+            <button class="btn ghost" id="chPrev">&#8249;</button>
+            <span id="chPageInfo">—</span>
+            <button class="btn ghost" id="chNext">&#8250;</button>
+          </div>
+          <div class="chart-scroll"><div class="chart-wrap"><canvas id="chartCat"></canvas></div></div>
         </div>
         <div class="card">
           <div class="card-head">
@@ -345,6 +372,22 @@ const DEFAULT_FB_CONFIG = {
 
 /* ====== Constantes ====== */
 const REGION = ["arauca","arauquita","saravena","cravo norte","tame","fortul","puerto rondon","cubara"];
+// Orden de mayor especificidad para clasificar el municipio
+const MUNIS = [
+  {k:"arauquita",   label:"Arauquita"},
+  {k:"saravena",    label:"Saravena"},
+  {k:"cravo norte", label:"Cravo Norte"},
+  {k:"puerto rondon",label:"Puerto Rondón"},
+  {k:"fortul",      label:"Fortul"},
+  {k:"cubara",      label:"Cubará"},
+  {k:"tame",        label:"Tame"},
+  {k:"arauca",      label:"Arauca"},
+];
+function muniOf(centro){
+  const v=norm(centro);
+  const m=MUNIS.find(m=>v.includes(m.k));
+  return m ? m.label : "Otro";
+}
 const PER_PAGE = 50;
 const COLORS = ["#f0890c","#0f9e8e","#6d5bd0","#1e7fd0","#e0436a","#5a9e1f","#cf6f00","#0b7d70","#8a78e0","#2f7fd0","#c23a5e","#7fb236"];
 
@@ -423,6 +466,7 @@ function ingest(rows){
     nombre:      r.nombre ?? "",
     nit:         (r.nit ?? "").toString(),
     centro:      r[ccKey] ?? "",
+    municipio:   muniOf(r[ccKey]),
     placa:       (r.placa ?? "").toString(),
     modelo:      r.modelo ?? "",
     codigo:      (r.codigo ?? "").toString(),
@@ -449,6 +493,25 @@ function showData(){
 /* ====== Filtros del Panel (combos con búsqueda) ====== */
 let panelCombos=null;
 let pShowAll=false;
+const selectedMunis=new Set();
+
+function buildMuniChips(){
+  const counts={};
+  RAW.forEach(r=>{ counts[r.municipio]=(counts[r.municipio]||0)+1; });
+  const present=MUNIS.map(m=>m.label).filter(l=>counts[l]);
+  if(counts["Otro"]) present.push("Otro");
+  selectedMunis.clear();
+  $("#muniChips").innerHTML=present.map(l=>
+    `<span class="muni-chip" data-m="${l}">${l}<span class="n">${counts[l]}</span></span>`).join("");
+  $("#muniChips").querySelectorAll(".muni-chip").forEach(ch=>{
+    ch.onclick=()=>{
+      const m=ch.dataset.m;
+      if(selectedMunis.has(m)){ selectedMunis.delete(m); ch.classList.remove("on"); }
+      else { selectedMunis.add(m); ch.classList.add("on"); }
+      pShowAll=false; refreshPanel();
+    };
+  });
+}
 
 function nitName(nit){
   const r=RAW.find(r=>r.nit===nit && r.nombre);
@@ -472,12 +535,16 @@ function buildPanelOptions(){
   panelCombos.articulo.setOptions(uniq("articulo"));
   panelCombos.nit.setOptions(nitOptions());
   Object.values(panelCombos).forEach(c=>c.reset());
+  buildMuniChips();
 }
 function panelFiltered(){
   const c=panelCombos.centro.value, a=panelCombos.articulo.value, n=panelCombos.nit.value;
-  return RAW.filter(r=>(!c||r.centro===c)&&(!a||r.articulo===a)&&(!n||r.nit===n));
+  return RAW.filter(r=>
+    (selectedMunis.size===0 || selectedMunis.has(r.municipio)) &&
+    (!c||r.centro===c)&&(!a||r.articulo===a)&&(!n||r.nit===n));
 }
 function refreshPanel(){
+  chartPage=0;
   const data=panelFiltered();
   $("#pCount").textContent=data.length.toLocaleString("es-CO");
   const nv=panelCombos.nit.value;
@@ -509,7 +576,12 @@ function renderPanelTable(data){
   else btn.style.display="none";
 }
 $("#pToggleAll").onclick=()=>{ pShowAll=!pShowAll; renderPanelTable(panelFiltered()); };
-$("#pReset").onclick=()=>{ Object.values(panelCombos).forEach(c=>c.reset()); pShowAll=false; refreshPanel(); };
+$("#pReset").onclick=()=>{
+  Object.values(panelCombos).forEach(c=>c.reset());
+  selectedMunis.clear();
+  $("#muniChips").querySelectorAll(".muni-chip").forEach(c=>c.classList.remove("on"));
+  pShowAll=false; refreshPanel();
+};
 
 /* ====== KPIs ====== */
 function buildKPIs(data){
@@ -533,23 +605,49 @@ function buildKPIs(data){
     </div>`).join("");
 }
 
-/* ====== Gráfico por categoría ====== */
+/* ====== Gráfico por categoría (con paginación) ====== */
+let chartPage=0;
+let chartShowAll=false;
+const CHART_PAGE=12;
+
 function buildChart(data){
   if(data) buildChart._d=data;
   data=buildChart._d||[];
   const map={};
   data.forEach(r=>{ map[r.articulo]=(map[r.articulo]||0)+r.valor*r.cantidad; });
-  let arr=Object.entries(map).sort((a,b)=>b[1]-a[1]);
-  const TOP=12;
+  const arr=Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  buildChart._arr=arr;
+
   let labels, values;
-  if(arr.length>TOP){
-    const top=arr.slice(0,TOP);
-    const rest=arr.slice(TOP).reduce((a,x)=>a+x[1],0);
-    labels=top.map(x=>x[0]).concat(["Otros ("+(arr.length-TOP)+")"]);
-    values=top.map(x=>x[1]).concat([rest]);
-  }else{ labels=arr.map(x=>x[0]); values=arr.map(x=>x[1]); }
+  if(chartShowAll){
+    labels=arr.map(x=>x[0]); values=arr.map(x=>x[1]);
+    $("#chartPager").style.display="none";
+  }else{
+    const pages=Math.max(1,Math.ceil(arr.length/CHART_PAGE));
+    if(chartPage>pages-1) chartPage=pages-1;
+    const start=chartPage*CHART_PAGE;
+    const slice=arr.slice(start,start+CHART_PAGE);
+    labels=slice.map(x=>x[0]); values=slice.map(x=>x[1]);
+    $("#chartPager").style.display = arr.length>CHART_PAGE ? "flex" : "none";
+    $("#chPageInfo").textContent=`Página ${chartPage+1} de ${pages} · ${arr.length} categorías`;
+    $("#chPrev").disabled=chartPage<=0;
+    $("#chNext").disabled=chartPage>=pages-1;
+  }
+  // Altura dinámica para barras cuando hay muchas categorías
+  const isBar=chartKind==="bar";
+  const wrap=$("#chartCat").parentElement;
+  wrap.style.height = (isBar ? Math.max(340, labels.length*30+40) : 340) + "px";
   renderChart(labels,values);
 }
+$("#chPrev").onclick=()=>{ if(chartPage>0){chartPage--; buildChart();} };
+$("#chNext").onclick=()=>{ const pages=Math.ceil((buildChart._arr||[]).length/CHART_PAGE);
+  if(chartPage<pages-1){chartPage++; buildChart();} };
+$("#chartAll").onclick=()=>{
+  chartShowAll=!chartShowAll; chartPage=0;
+  $("#chartAll").textContent = chartShowAll ? "Paginar" : "Ver todas";
+  $("#chartAll").classList.toggle("teal",chartShowAll);
+  buildChart();
+};
 function renderChart(labels,data){
   if(chart) chart.destroy();
   const ctx=$("#chartCat");
