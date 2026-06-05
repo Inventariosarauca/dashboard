@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Inventario Arauca · Tablero de Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#eef2f7; --bg-2:#f7fafd; --panel:#ffffff; --panel-2:#eef3f9;
+    --line:#d6dfeb; --line-soft:#e6ecf3;
+    --txt:#13202f; --txt-dim:#5b6c80; --txt-faint:#8595a8;
+    --amber:#f0890c; --amber-deep:#cf6f00;
+    --teal:#0f9e8e; --teal-deep:#0b7d70;
+    --violet:#6d5bd0; --rose:#e0436a; --lime:#5a9e1f; --sky:#1e7fd0;
+    --ok:#0f9e6e; --warn:#cf6f00; --danger:#e0436a;
+    --shadow:0 14px 34px -20px rgba(20,45,80,.30); --radius:16px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'DM Sans',system-ui,sans-serif;
+    background:
+      radial-gradient(900px 500px at 88% -8%, rgba(240,137,12,.10), transparent 60%),
+      radial-gradient(800px 520px at 5% 105%, rgba(15,158,142,.10), transparent 60%),
+      var(--bg);
+    color:var(--txt); line-height:1.5; min-height:100vh; -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.num{font-family:'Sora',sans-serif}
+  .mono{font-family:'JetBrains Mono',monospace}
+  header{position:sticky; top:0; z-index:40; backdrop-filter:blur(12px);
+    background:linear-gradient(180deg, rgba(247,250,253,.94), rgba(247,250,253,.78));
+    border-bottom:1px solid var(--line);}
+  .head-inner{max-width:1320px; margin:0 auto; padding:14px 22px;
+    display:flex; align-items:center; gap:18px; flex-wrap:wrap;}
+  .brand{display:flex; align-items:center; gap:13px; margin-right:auto}
+  .logo{width:42px; height:42px; border-radius:12px; flex:none;
+    background:linear-gradient(135deg,var(--amber),var(--amber-deep));
+    display:grid; place-items:center; color:#fff; font-weight:800;
+    box-shadow:0 8px 22px -8px rgba(240,137,12,.7); font-family:'Sora'; font-size:18px;}
+  .brand h1{font-size:1.06rem; font-weight:700; letter-spacing:.2px}
+  .brand p{font-size:.74rem; color:var(--txt-dim); letter-spacing:.4px; text-transform:uppercase}
+  .btn{font-family:'DM Sans'; font-size:.84rem; font-weight:600; cursor:pointer;
+    border:1px solid var(--line); background:var(--panel); color:var(--txt);
+    padding:9px 15px; border-radius:10px; display:inline-flex; align-items:center; gap:8px;
+    transition:.18s; white-space:nowrap;}
+  .btn:hover{border-color:var(--amber); transform:translateY(-1px)}
+  .btn.primary{background:linear-gradient(135deg,var(--amber),var(--amber-deep)); color:#fff; border:none}
+  .btn.ghost{background:transparent}
+  .btn.teal{background:linear-gradient(135deg,var(--teal),var(--teal-deep)); color:#fff; border:none}
+  .btn:disabled{opacity:.45; cursor:not-allowed; transform:none}
+  .fb-pill{display:inline-flex; align-items:center; gap:7px; font-size:.74rem; font-weight:600;
+    padding:6px 12px; border-radius:999px; border:1px solid var(--line); color:var(--txt-dim);}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--txt-faint)}
+  .dot.on{background:var(--ok); box-shadow:0 0 10px var(--ok)}
+  .dot.err{background:var(--danger); box-shadow:0 0 10px var(--danger)}
+  nav.tabs{max-width:1320px; margin:0 auto; padding:0 22px; display:flex; gap:6px}
+  .tab{padding:13px 18px 12px; font-weight:600; font-size:.9rem; color:var(--txt-dim);
+    cursor:pointer; border:none; background:none; border-bottom:2.5px solid transparent;
+    transition:.18s; display:flex; align-items:center; gap:8px;}
+  .tab:hover{color:var(--txt)}
+  .tab.active{color:var(--amber); border-color:var(--amber)}
+  main{max-width:1320px; margin:0 auto; padding:24px 22px 70px}
+  .view{display:none; animation:fade .35s ease}
+  .view.active{display:block}
+  @keyframes fade{from{opacity:0; transform:translateY(8px)}to{opacity:1; transform:none}}
+  .region-tag{display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap;
+    font-size:.78rem; color:var(--txt-dim); margin-bottom:18px;}
+  .chip{font-size:.72rem; padding:3px 10px; border-radius:999px; font-weight:600;
+    background:rgba(54,214,195,.12); color:var(--teal); border:1px solid rgba(54,214,195,.25);}
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(178px,1fr)); gap:14px; margin-bottom:22px}
+  .kpi{background:linear-gradient(165deg,var(--panel),var(--bg-2));
+    border:1px solid var(--line); border-radius:var(--radius); padding:18px 18px 16px;
+    position:relative; overflow:hidden; box-shadow:var(--shadow);}
+  .kpi::before{content:""; position:absolute; inset:0 auto auto 0; width:3px; height:100%;
+    background:linear-gradient(var(--amber),var(--amber-deep))}
+  .kpi.k2::before{background:linear-gradient(var(--teal),var(--teal-deep))}
+  .kpi.k3::before{background:linear-gradient(var(--violet),#6d5bd0)}
+  .kpi.k4::before{background:linear-gradient(var(--sky),#2f7fd0)}
+  .kpi.k5::before{background:linear-gradient(var(--rose),#d04767)}
+  .kpi .label{font-size:.74rem; color:var(--txt-dim); text-transform:uppercase; letter-spacing:.6px; font-weight:600}
+  .kpi .value{font-family:'Sora'; font-weight:800; font-size:1.7rem; margin-top:8px; letter-spacing:-.5px}
+  .kpi .sub{font-size:.74rem; color:var(--txt-faint); margin-top:4px}
+  .grid{display:grid; gap:18px}
+  .grid.cols-2{grid-template-columns:1.15fr .85fr}
+  .card{background:linear-gradient(165deg,var(--panel),var(--bg-2));
+    border:1px solid var(--line); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow);}
+  .card-head{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap}
+  .card-head h3{font-size:1rem; font-weight:700; display:flex; align-items:center; gap:9px}
+  .card-head h3 .acc{width:9px;height:9px;border-radius:3px;background:var(--amber)}
+  .seg{display:flex; gap:4px; background:var(--bg); border:1px solid var(--line); border-radius:9px; padding:3px}
+  .seg button{font-size:.76rem; font-weight:600; padding:5px 11px; border:none; border-radius:7px;
+    background:none; color:var(--txt-dim); cursor:pointer; transition:.15s}
+  .seg button.active{background:var(--amber); color:#fff}
+  .chart-wrap{position:relative; height:340px}
+  .cc-list{display:flex; flex-direction:column; gap:9px; max-height:340px; overflow:auto; padding-right:6px}
+  .cc-list::-webkit-scrollbar{width:8px}
+  .cc-list::-webkit-scrollbar-thumb{background:var(--line); border-radius:8px}
+  .cc-row{display:grid; grid-template-columns:1fr auto; gap:6px; padding:9px 11px;
+    background:var(--bg); border:1px solid var(--line-soft); border-radius:10px}
+  .cc-row .nm{font-size:.82rem; font-weight:600}
+  .cc-row .meta{font-size:.72rem; color:var(--txt-dim); margin-top:2px}
+  .cc-row .qty{font-family:'JetBrains Mono'; font-weight:700; color:var(--teal); font-size:1.05rem; align-self:center}
+  .bar{height:5px; border-radius:4px; background:var(--line); margin-top:7px; overflow:hidden; grid-column:1/-1}
+  .bar > i{display:block; height:100%; background:linear-gradient(90deg,var(--amber),var(--amber-deep)); border-radius:4px}
+  .filters{background:linear-gradient(165deg,var(--panel),var(--bg-2));
+    border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:18px;
+    box-shadow:var(--shadow); position:sticky; top:108px; z-index:20;}
+  .filters-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:13px}
+  .fld label{display:block; font-size:.72rem; font-weight:600; color:var(--txt-dim);
+    text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px}
+  .fld select, .fld input{width:100%; background:var(--bg); border:1px solid var(--line); color:var(--txt);
+    padding:10px 12px; border-radius:10px; font-family:'DM Sans'; font-size:.86rem; transition:.15s;}
+  .fld select:focus, .fld input:focus{outline:none; border-color:var(--amber); box-shadow:0 0 0 3px rgba(255,179,71,.15)}
+  .filters-foot{display:flex; align-items:center; gap:12px; margin-top:14px; flex-wrap:wrap}
+  .filters-foot .count{margin-right:auto; font-size:.84rem; color:var(--txt-dim)}
+  .filters-foot .count b{color:var(--amber); font-family:'JetBrains Mono'}
+  .table-wrap{overflow:auto; border:1px solid var(--line); border-radius:var(--radius); background:var(--panel)}
+  table{width:100%; border-collapse:collapse; font-size:.82rem; min-width:880px}
+  thead th{position:sticky; top:0; background:var(--panel-2); text-align:left; padding:12px 13px;
+    font-weight:600; color:var(--txt-dim); font-size:.72rem; text-transform:uppercase; letter-spacing:.5px;
+    border-bottom:1px solid var(--line); white-space:nowrap}
+  tbody td{padding:11px 13px; border-bottom:1px solid var(--line-soft); vertical-align:top}
+  tbody tr:hover{background:var(--bg-2)}
+  td.r, th.r{text-align:right; font-family:'JetBrains Mono'}
+  .badge{font-size:.68rem; padding:2px 8px; border-radius:6px; background:rgba(91,184,255,.14);
+    color:var(--sky); font-weight:600; white-space:nowrap}
+  .pager{display:flex; align-items:center; justify-content:center; gap:10px; margin-top:16px; font-size:.84rem; color:var(--txt-dim)}
+  .pager button{padding:7px 12px}
+  .empty{border:1.5px dashed var(--line); border-radius:var(--radius); padding:60px 24px; text-align:center;
+    background:linear-gradient(165deg,var(--panel),var(--bg-2));}
+  .empty .ic{font-size:2.6rem; margin-bottom:12px}
+  .empty h2{font-weight:700; margin-bottom:8px; font-size:1.3rem}
+  .empty p{color:var(--txt-dim); max-width:480px; margin:0 auto 20px; font-size:.92rem}
+  .drop{border-color:var(--amber); background:rgba(255,179,71,.06)}
+  .modal-bg{position:fixed; inset:0; background:rgba(4,8,14,.72); backdrop-filter:blur(4px);
+    display:none; place-items:center; z-index:60; padding:20px}
+  .modal-bg.open{display:grid}
+  .modal{background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:24px;
+    width:min(560px,100%); box-shadow:0 30px 80px -30px #000; animation:fade .25s}
+  .modal h2{font-size:1.15rem; margin-bottom:6px}
+  .modal p.hint{font-size:.84rem; color:var(--txt-dim); margin-bottom:16px}
+  .modal textarea{width:100%; min-height:170px; background:var(--bg); border:1px solid var(--line);
+    color:var(--txt); border-radius:12px; padding:13px; font-family:'JetBrains Mono'; font-size:.8rem; resize:vertical}
+  .modal .row{display:flex; gap:10px; margin-top:16px; justify-content:flex-end}
+  .modal small{display:block; color:var(--txt-faint); margin-top:10px; font-size:.74rem; line-height:1.6}
+  .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--panel-2); border:1px solid var(--line); color:var(--txt); padding:12px 20px;
+    border-radius:12px; font-size:.86rem; font-weight:600; box-shadow:var(--shadow); opacity:0;
+    transition:.3s; z-index:80; pointer-events:none}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  .toast.ok{border-color:var(--ok)} .toast.err{border-color:var(--danger)}
+  @media(max-width:880px){
+    .grid.cols-2{grid-template-columns:1fr}
+    .brand p{display:none}
+    .filters{position:static}
+    .head-inner{gap:10px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="head-inner">
+    <div class="brand">
+      <div class="logo">AR</div>
+      <div><h1>Inventario Región Arauca</h1><p>Tablero de control · Centros de costos</p></div>
+    </div>
+    <span class="fb-pill"><span id="fbDot" class="dot"></span><span id="fbLabel">Firebase: sin conectar</span></span>
+    <label class="btn primary" for="fileInput">&#8593; Cargar archivo</label>
+    <input id="fileInput" type="file" accept=".xls,.xlsx,.csv" hidden />
+    <button class="btn teal" id="btnSave" disabled>&#9729; Guardar</button>
+    <button class="btn ghost" id="btnLoad">&#10515; Cargar nube</button>
+    <button class="btn ghost" id="btnFb">&#9881; Firebase</button>
+  </div>
+  <nav class="tabs">
+    <button class="tab active" data-view="panel">&#128202; Panel</button>
+    <button class="tab" data-view="filtros">&#128269; Filtros dinámicos</button>
+  </nav>
+</header>
+
+<main>
+  <section class="view active" id="view-panel">
+    <div id="panelEmpty" class="empty" ondragover="event.preventDefault();this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="dropFile(event)">
+      <div class="ic">&#128230;</div>
+      <h2>Carga tu inventario para empezar</h2>
+      <p>Sube el archivo <b>.xls</b>, <b>.xlsx</b> o <b>.csv</b>. El sistema filtrará automáticamente los registros cuyo <b>centro_costos</b> pertenezca a la región de Arauca: Arauca, Arauquita, Saravena, Cravo Norte, Tame, Fortul, Puerto Rondón y Cubará.</p>
+      <label class="btn primary" for="fileInput">Seleccionar archivo</label>
+    </div>
+    <div id="panelContent" style="display:none">
+      <div class="region-tag">
+        <span>Filtro de región activo:</span>
+        <span class="chip">Arauca</span><span class="chip">Arauquita</span><span class="chip">Saravena</span>
+        <span class="chip">Cravo Norte</span><span class="chip">Tame</span><span class="chip">Fortul</span>
+        <span class="chip">Puerto Rondón</span><span class="chip">Cubará</span>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <div class="grid cols-2">
+        <div class="card">
+          <div class="card-head">
+            <h3><span class="acc"></span>Valor del inventario por categoría</h3>
+            <div class="seg" id="chartType">
+              <button class="active" data-t="bar">Barras</button>
+              <button data-t="doughnut">Anillo</button>
+            </div>
+          </div>
+          <div class="chart-wrap"><canvas id="chartCat"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h3><span class="acc" style="background:var(--teal)"></span>Productos por centro de costos</h3>
+            <span style="font-size:.74rem;color:var(--txt-dim)">orden desc.</span>
+          </div>
+          <div class="cc-list" id="ccList"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-filtros">
+    <div id="filtrosEmpty" class="empty">
+      <div class="ic">&#128269;</div>
+      <h2>Sin datos cargados</h2>
+      <p>Carga primero un archivo de inventario desde el botón superior para habilitar los filtros dinámicos.</p>
+      <label class="btn primary" for="fileInput">Cargar archivo</label>
+    </div>
+    <div id="filtrosContent" style="display:none">
+      <div class="filters">
+        <div class="filters-grid">
+          <div class="fld"><label>Artículo</label><select id="fArticulo"></select></div>
+          <div class="fld"><label>NIT</label><select id="fNit"></select></div>
+          <div class="fld"><label>Centro de costos</label><select id="fCentro"></select></div>
+          <div class="fld"><label>Placa</label><select id="fPlaca"></select></div>
+          <div class="fld"><label>Búsqueda libre</label><input id="fSearch" type="text" placeholder="Nombre, modelo, código…" /></div>
+        </div>
+        <div class="filters-foot">
+          <span class="count">Mostrando <b id="resCount">0</b> de <b id="resTotal">0</b> registros</span>
+          <button class="btn ghost" id="btnReset">&#8635; Limpiar</button>
+          <button class="btn teal" id="btnExport">&#10515; Exportar CSV</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Artículo</th><th>Nombre / Responsable</th><th>NIT</th>
+            <th>Centro de costos</th><th>Placa</th><th>Modelo</th>
+            <th class="r">Cant.</th><th class="r">Valor unit.</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button class="btn ghost" id="prevPage">&#8249; Anterior</button>
+        <span id="pageInfo">Página 1</span>
+        <button class="btn ghost" id="nextPage">Siguiente &#8250;</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="modal-bg" id="fbModal">
+  <div class="modal">
+    <h2>&#9881; Conexión a Firebase</h2>
+    <p class="hint">Pega el objeto <b>firebaseConfig</b> de tu proyecto (Consola Firebase &rarr; Configuración del proyecto). Se usa Firestore para guardar y leer los inventarios.</p>
+    <textarea id="fbConfig" placeholder='{ "apiKey": "...", "authDomain": "tu-proyecto.firebaseapp.com", "projectId": "tu-proyecto", "storageBucket": "tu-proyecto.appspot.com", "messagingSenderId": "...", "appId": "..." }'></textarea>
+    <div class="row">
+      <button class="btn ghost" id="fbCancel">Cerrar</button>
+      <button class="btn primary" id="fbConnect">Conectar</button>
+    </div>
+    <small>La configuración se guarda localmente en este navegador (localStorage). Para que las escrituras funcionen, habilita Firestore y define reglas de seguridad acordes a tu caso.</small>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ====== Configuración Firebase embebida (conexión automática) ====== */
+const DEFAULT_FB_CONFIG = {
+  apiKey: "AIzaSyAzKkvtT2zRfkbktC3iSipGJ1nepdrzTwA",
+  authDomain: "inventarios-arauca.firebaseapp.com",
+  projectId: "inventarios-arauca",
+  storageBucket: "inventarios-arauca.firebasestorage.app",
+  messagingSenderId: "577151401209",
+  appId: "1:577151401209:web:fd5e9dbdd34398988ff628"
+};
+
+/* ====== Constantes ====== */
+const REGION = ["arauca","arauquita","saravena","cravo norte","tame","fortul","puerto rondon","cubara"];
+const PER_PAGE = 50;
+const COLORS = ["#f0890c","#0f9e8e","#6d5bd0","#1e7fd0","#e0436a","#5a9e1f","#cf6f00","#0b7d70","#8a78e0","#2f7fd0","#c23a5e","#7fb236"];
+
+/* ====== Estado ====== */
+let RAW = [];        // registros filtrados a región Arauca
+let VIEW = [];       // registros tras filtros dinámicos
+let page = 1;
+let chart = null;
+let chartKind = "bar";
+let fb = { app:null, db:null };
+
+/* ====== Utilidades ====== */
+const $ = s => document.querySelector(s);
+const norm = s => (s ?? "").toString().toLowerCase()
+  .normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+const money = n => "$" + Math.round(n||0).toLocaleString("es-CO");
+const moneyShort = n => {
+  n = n||0;
+  if(n>=1e9) return "$"+(n/1e9).toFixed(2)+" MM";
+  if(n>=1e6) return "$"+(n/1e6).toFixed(1)+" M";
+  if(n>=1e3) return "$"+(n/1e3).toFixed(0)+" K";
+  return "$"+Math.round(n);
+};
+function toast(msg, type){
+  const t=$("#toast"); t.textContent=msg; t.className="toast show "+(type||"");
+  setTimeout(()=>t.className="toast",2800);
+}
+function num(v){ const n=parseFloat(String(v).replace(/[^0-9.\-]/g,"")); return isNaN(n)?0:n; }
+
+/* ====== Tabs ====== */
+document.querySelectorAll(".tab").forEach(t=>{
+  t.onclick=()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active");
+    $("#view-"+t.dataset.view).classList.add("active");
+  };
+});
+
+/* ====== Carga de archivo ====== */
+$("#fileInput").addEventListener("change", e=>{ if(e.target.files[0]) readFile(e.target.files[0]); });
+function dropFile(e){
+  e.preventDefault(); e.currentTarget.classList.remove("drop");
+  if(e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+}
+function readFile(file){
+  toast("Leyendo "+file.name+"…");
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:""});
+      ingest(rows);
+    }catch(err){ console.error(err); toast("No se pudo leer el archivo","err"); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ====== Procesamiento / filtro de región ====== */
+function ingest(rows){
+  if(!rows.length){ toast("El archivo está vacío","err"); return; }
+  // localizar la columna centro_costos sin importar mayúsculas/espacios
+  const keys=Object.keys(rows[0]);
+  const ccKey=keys.find(k=>norm(k).replace(/[ _]/g,"")==="centrocostos") || "centro_costos";
+  const filtered=rows.filter(r=>{
+    const v=norm(r[ccKey]);
+    return REGION.some(m=>v.includes(m));
+  });
+  if(!filtered.length){
+    toast("No se hallaron registros de la región Arauca en 'centro_costos'","err");
+    return;
+  }
+  RAW=filtered.map(r=>({
+    articulo:    r.articulo ?? r.Articulo ?? "",
+    nombre:      r.nombre ?? "",
+    nit:         (r.nit ?? "").toString(),
+    centro:      r[ccKey] ?? "",
+    placa:       (r.placa ?? "").toString(),
+    modelo:      r.modelo ?? "",
+    codigo:      (r.codigo ?? "").toString(),
+    cantidad:    num(r.cantidad ?? 1) || 1,
+    valor:       num(r.valor_articulo ?? r.valor ?? 0),
+    estado:      r.estado ?? "",
+  }));
+  showData();
+  toast(RAW.length+" registros de la región cargados", "ok");
+}
+
+function showData(){
+  $("#panelEmpty").style.display="none";
+  $("#panelContent").style.display="block";
+  $("#filtrosEmpty").style.display="none";
+  $("#filtrosContent").style.display="block";
+  $("#btnSave").disabled = !fb.db;
+  buildKPIs();
+  buildChart();
+  buildCentros();
+  buildFilterOptions();
+  applyFilters();
+}
+
+/* ====== KPIs ====== */
+function buildKPIs(){
+  const centros=new Set(RAW.map(r=>r.centro)).size;
+  const articulos=new Set(RAW.map(r=>r.articulo)).size;
+  const nits=new Set(RAW.map(r=>r.nit).filter(Boolean)).size;
+  const totalCant=RAW.reduce((a,r)=>a+r.cantidad,0);
+  const totalValor=RAW.reduce((a,r)=>a+r.valor*r.cantidad,0);
+  const cards=[
+    {c:"", l:"Total productos", v:totalCant.toLocaleString("es-CO"), s:RAW.length+" registros"},
+    {c:"k2", l:"Valor inventario", v:moneyShort(totalValor), s:money(totalValor)},
+    {c:"k3", l:"Centros de costos", v:centros, s:"dependencias"},
+    {c:"k4", l:"Categorías (artículos)", v:articulos, s:"tipos distintos"},
+    {c:"k5", l:"NIT / responsables", v:nits, s:"identificados"},
+  ];
+  $("#kpis").innerHTML=cards.map(k=>`
+    <div class="kpi ${k.c}">
+      <div class="label">${k.l}</div>
+      <div class="value">${k.v}</div>
+      <div class="sub">${k.s}</div>
+    </div>`).join("");
+}
+
+/* ====== Gráfico por categoría ====== */
+function buildChart(){
+  const map={};
+  RAW.forEach(r=>{ map[r.articulo]=(map[r.articulo]||0)+r.valor*r.cantidad; });
+  let arr=Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  const TOP=12;
+  let labels, data;
+  if(arr.length>TOP){
+    const top=arr.slice(0,TOP);
+    const rest=arr.slice(TOP).reduce((a,x)=>a+x[1],0);
+    labels=top.map(x=>x[0]).concat(["Otros ("+(arr.length-TOP)+")"]);
+    data=top.map(x=>x[1]).concat([rest]);
+  }else{ labels=arr.map(x=>x[0]); data=arr.map(x=>x[1]); }
+  renderChart(labels,data);
+}
+function renderChart(labels,data){
+  if(chart) chart.destroy();
+  const ctx=$("#chartCat");
+  const isBar=chartKind==="bar";
+  chart=new Chart(ctx,{
+    type:chartKind,
+    data:{ labels,
+      datasets:[{ label:"Valor",
+        data,
+        backgroundColor:isBar?"#f0890c":labels.map((_,i)=>COLORS[i%COLORS.length]),
+        borderColor:isBar?"#cf6f00":"#ffffff",
+        borderWidth:isBar?0:2, borderRadius:isBar?6:0,
+        hoverBackgroundColor:"#0f9e8e"
+      }]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      indexAxis:isBar?"y":"x",
+      plugins:{
+        legend:{display:!isBar, position:"right",
+          labels:{color:"#5b6c80", font:{family:"DM Sans", size:11}, boxWidth:12, padding:8}},
+        tooltip:{callbacks:{label:c=>" "+money(c.parsed.x ?? c.parsed.y ?? c.parsed)}}
+      },
+      scales:isBar?{
+        x:{ticks:{color:"#8595a8", callback:v=>moneyShort(v)}, grid:{color:"#e6ecf3"}},
+        y:{ticks:{color:"#5b6c80", font:{size:11}}, grid:{display:false}}
+      }:{}
+    }
+  });
+}
+$("#chartType").addEventListener("click", e=>{
+  if(e.target.tagName!=="BUTTON") return;
+  document.querySelectorAll("#chartType button").forEach(b=>b.classList.remove("active"));
+  e.target.classList.add("active");
+  chartKind=e.target.dataset.t; buildChart();
+});
+
+/* ====== Centros de costos ====== */
+function buildCentros(){
+  const map={};
+  RAW.forEach(r=>{
+    if(!map[r.centro]) map[r.centro]={cant:0,val:0};
+    map[r.centro].cant+=r.cantidad; map[r.centro].val+=r.valor*r.cantidad;
+  });
+  const arr=Object.entries(map).sort((a,b)=>b[1].cant-a[1].cant);
+  const max=arr.length?arr[0][1].cant:1;
+  $("#ccList").innerHTML=arr.map(([c,d])=>`
+    <div class="cc-row">
+      <div>
+        <div class="nm">${c||"(sin nombre)"}</div>
+        <div class="meta">${moneyShort(d.val)} en valor</div>
+      </div>
+      <div class="qty">${d.cant}</div>
+      <div class="bar"><i style="width:${(d.cant/max*100).toFixed(1)}%"></i></div>
+    </div>`).join("");
+}
+
+/* ====== Filtros dinámicos ====== */
+function uniq(field){
+  return [...new Set(RAW.map(r=>r[field]).filter(v=>v!==""&&v!=null))]
+    .sort((a,b)=>String(a).localeCompare(String(b),"es"));
+}
+function buildFilterOptions(){
+  fill("#fArticulo","Todos los artículos",uniq("articulo"));
+  fill("#fNit","Todos los NIT",uniq("nit"));
+  fill("#fCentro","Todos los centros",uniq("centro"));
+  fill("#fPlaca","Todas las placas",uniq("placa"));
+}
+function fill(sel,allLabel,vals){
+  const el=$(sel);
+  el.innerHTML=`<option value="">${allLabel} (${vals.length})</option>`+
+    vals.map(v=>`<option value="${String(v).replace(/"/g,"&quot;")}">${v}</option>`).join("");
+}
+["#fArticulo","#fNit","#fCentro","#fPlaca"].forEach(s=>$(s).addEventListener("change",()=>{page=1;applyFilters();}));
+$("#fSearch").addEventListener("input",()=>{page=1;applyFilters();});
+$("#btnReset").onclick=()=>{
+  ["#fArticulo","#fNit","#fCentro","#fPlaca"].forEach(s=>$(s).value="");
+  $("#fSearch").value=""; page=1; applyFilters();
+};
+
+function applyFilters(){
+  const a=$("#fArticulo").value, n=$("#fNit").value, c=$("#fCentro").value,
+        p=$("#fPlaca").value, q=norm($("#fSearch").value);
+  VIEW=RAW.filter(r=>
+    (!a||r.articulo===a)&&(!n||r.nit===n)&&(!c||r.centro===c)&&(!p||r.placa===p)&&
+    (!q || norm(r.nombre).includes(q)||norm(r.modelo).includes(q)||
+           norm(r.codigo).includes(q)||norm(r.articulo).includes(q))
+  );
+  $("#resCount").textContent=VIEW.length.toLocaleString("es-CO");
+  $("#resTotal").textContent=RAW.length.toLocaleString("es-CO");
+  renderTable();
+}
+function renderTable(){
+  const totalPages=Math.max(1,Math.ceil(VIEW.length/PER_PAGE));
+  if(page>totalPages) page=totalPages;
+  const slice=VIEW.slice((page-1)*PER_PAGE,page*PER_PAGE);
+  $("#tbody").innerHTML = slice.length ? slice.map(r=>`
+    <tr>
+      <td><b>${r.articulo}</b></td>
+      <td>${r.nombre||"—"}</td>
+      <td class="mono">${r.nit||"—"}</td>
+      <td>${r.centro}</td>
+      <td><span class="badge">${r.placa||"s/p"}</span></td>
+      <td>${r.modelo||"—"}</td>
+      <td class="r">${r.cantidad}</td>
+      <td class="r">${money(r.valor)}</td>
+    </tr>`).join("")
+    : `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--txt-dim)">Sin resultados para los filtros aplicados.</td></tr>`;
+  $("#pageInfo").textContent=`Página ${page} de ${totalPages}`;
+  $("#prevPage").disabled=page<=1; $("#nextPage").disabled=page>=totalPages;
+}
+$("#prevPage").onclick=()=>{if(page>1){page--;renderTable();}};
+$("#nextPage").onclick=()=>{const tp=Math.ceil(VIEW.length/PER_PAGE);if(page<tp){page++;renderTable();}};
+
+/* ====== Exportar CSV ====== */
+$("#btnExport").onclick=()=>{
+  if(!VIEW.length){toast("No hay datos para exportar","err");return;}
+  const head=["articulo","nombre","nit","centro_costos","placa","modelo","cantidad","valor_articulo"];
+  const lines=[head.join(";")].concat(VIEW.map(r=>
+    [r.articulo,r.nombre,r.nit,r.centro,r.placa,r.modelo,r.cantidad,r.valor]
+      .map(v=>`"${String(v).replace(/"/g,'""')}"`).join(";")));
+  const blob=new Blob(["\uFEFF"+lines.join("\n")],{type:"text/csv;charset=utf-8;"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="inventario_arauca_filtrado.csv"; a.click();
+  toast("CSV exportado ("+VIEW.length+" filas)","ok");
+};
+
+/* ====== Firebase ====== */
+$("#btnFb").onclick=()=>{ $("#fbModal").classList.add("open"); };
+$("#fbCancel").onclick=()=>$("#fbModal").classList.remove("open");
+$("#fbModal").addEventListener("click",e=>{ if(e.target.id==="fbModal") e.target.classList.remove("open"); });
+
+const saved=localStorage.getItem("fbConfig");
+const startCfg = saved || JSON.stringify(DEFAULT_FB_CONFIG, null, 2);
+$("#fbConfig").value = startCfg;
+initFirebase(startCfg, true);   // conexión automática al abrir
+
+$("#fbConnect").onclick=()=>{
+  const raw=$("#fbConfig").value.trim();
+  if(!raw){ toast("Pega la configuración de Firebase","err"); return; }
+  initFirebase(raw,false);
+};
+
+async function loadSdk(url){
+  return import(/* @vite-ignore */ url);
+}
+async function initFirebase(raw,silent){
+  let cfg;
+  try{ cfg=JSON.parse(raw); }
+  catch(_){ if(!silent) toast("La configuración no es un JSON válido","err"); return; }
+  try{
+    const appMod=await loadSdk("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+    const fsMod=await loadSdk("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    fb.app=appMod.initializeApp(cfg);
+    fb.db=fsMod.getFirestore(fb.app);
+    fb._fs=fsMod;
+    localStorage.setItem("fbConfig",raw);
+    $("#fbDot").className="dot on";
+    $("#fbLabel").textContent="Firebase: "+(cfg.projectId||"conectado");
+    $("#btnSave").disabled = RAW.length===0;
+    $("#fbModal").classList.remove("open");
+    if(!silent) toast("Conectado a Firestore","ok");
+  }catch(err){
+    console.error(err);
+    $("#fbDot").className="dot err";
+    $("#fbLabel").textContent="Firebase: error";
+    if(!silent) toast("No se pudo conectar (revisa la config o la red)","err");
+  }
+}
+
+$("#btnSave").onclick=async()=>{
+  if(!fb.db){ toast("Conecta Firebase primero","err"); return; }
+  if(!RAW.length){ toast("No hay datos cargados","err"); return; }
+  try{
+    const {collection,addDoc,serverTimestamp}=fb._fs;
+    const totalValor=RAW.reduce((a,r)=>a+r.valor*r.cantidad,0);
+    await addDoc(collection(fb.db,"inventarios_arauca"),{
+      creado:serverTimestamp(),
+      registros:RAW.length,
+      valor_total:totalValor,
+      centros:[...new Set(RAW.map(r=>r.centro))].length,
+      datos:RAW
+    });
+    toast("Inventario guardado en Firestore","ok");
+  }catch(err){ console.error(err); toast("Error al guardar: "+(err.code||err.message),"err"); }
+};
+
+$("#btnLoad").onclick=async()=>{
+  if(!fb.db){ toast("Conecta Firebase primero","err"); $("#fbModal").classList.add("open"); return; }
+  try{
+    const {collection,getDocs,query,orderBy,limit}=fb._fs;
+    const q=query(collection(fb.db,"inventarios_arauca"),orderBy("creado","desc"),limit(1));
+    const snap=await getDocs(q);
+    if(snap.empty){ toast("No hay inventarios guardados","err"); return; }
+    const doc=snap.docs[0].data();
+    RAW=doc.datos||[];
+    showData();
+    toast("Inventario cargado desde la nube ("+RAW.length+" registros)","ok");
+  }catch(err){ console.error(err); toast("Error al cargar: "+(err.code||err.message),"err"); }
+};
+</script>
+</body>
+</html>
