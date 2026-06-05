@@ -146,6 +146,11 @@
   .combo-opt:last-child{border-bottom:none}
   .combo-opt:hover,.combo-opt.active{background:rgba(240,137,12,.10)}
   .combo-opt.all{font-weight:600; color:var(--teal-deep)}
+  .combo-opt.opt-check{display:flex; align-items:center; gap:9px}
+  .combo-opt .ck{width:16px; height:16px; flex:none; border:1.5px solid var(--line);
+    border-radius:5px; display:grid; place-items:center; font-size:.72rem; color:#fff; background:var(--bg)}
+  .combo-opt.sel{background:rgba(240,137,12,.08)}
+  .combo-opt.sel .ck{background:var(--amber); border-color:var(--amber)}
   .combo-opt mark{background:rgba(240,137,12,.30); color:inherit; border-radius:3px}
   .combo-empty{padding:11px 12px; font-size:.82rem; color:var(--txt-faint)}
   .combo-menu::-webkit-scrollbar{width:8px}
@@ -329,7 +334,7 @@
         <table>
           <thead><tr>
             <th>Artículo</th><th>Nombre / Responsable</th><th>NIT</th>
-            <th>Centro de costos</th><th>Placa</th><th>Modelo</th>
+            <th>Centro de costos</th><th>Placa</th><th>Numeración física</th>
             <th class="r">Cant.</th><th class="r">Valor unit.</th>
           </tr></thead>
           <tbody id="tbody"></tbody>
@@ -469,6 +474,7 @@ function ingest(rows){
     municipio:   muniOf(r[ccKey]),
     placa:       (r.placa ?? "").toString(),
     modelo:      r.modelo ?? "",
+    numfis:      (r.numeracion_fisica ?? "").toString(),
     codigo:      (r.codigo ?? "").toString(),
     cantidad:    num(r.cantidad ?? 1) || 1,
     valor:       num(r.valor_articulo ?? r.valor ?? 0),
@@ -538,17 +544,19 @@ function buildPanelOptions(){
   buildMuniChips();
 }
 function panelFiltered(){
-  const c=panelCombos.centro.value, a=panelCombos.articulo.value, n=panelCombos.nit.value;
+  const c=new Set(panelCombos.centro.values), a=new Set(panelCombos.articulo.values),
+        n=new Set(panelCombos.nit.values);
   return RAW.filter(r=>
     (selectedMunis.size===0 || selectedMunis.has(r.municipio)) &&
-    (!c||r.centro===c)&&(!a||r.articulo===a)&&(!n||r.nit===n));
+    (!c.size||c.has(r.centro))&&(!a.size||a.has(r.articulo))&&(!n.size||n.has(r.nit)));
 }
 function refreshPanel(){
   chartPage=0;
   const data=panelFiltered();
   $("#pCount").textContent=data.length.toLocaleString("es-CO");
-  const nv=panelCombos.nit.value;
-  $("#pNitName").textContent = nv ? ("Servidor: "+(nitName(nv)||"sin nombre")) : "";
+  const nv=panelCombos.nit.values;
+  $("#pNitName").textContent = nv.length===1 ? ("Servidor: "+(nitName(nv[0])||"sin nombre"))
+    : nv.length>1 ? (nv.length+" servidores seleccionados") : "";
   buildKPIs(data);
   buildChart(data);
   buildCentros(data);
@@ -712,6 +720,7 @@ function uniq(field){
 
 // Componente combo: input con búsqueda + menú filtrable
 // opts: array de strings  ó  de objetos {v:valor, t:textoMostrado, s:textoBusqueda}
+// Multi-selección: permite escoger varias opciones a la vez.
 function makeCombo(mountSel, allLabel, onChange){
   const root=$(mountSel);
   root.innerHTML=`<input class="combo-input" type="text" readonly placeholder="${allLabel}">
@@ -719,21 +728,29 @@ function makeCombo(mountSel, allLabel, onChange){
     <div class="combo-menu"></div>`;
   const input=root.querySelector(".combo-input");
   const menu=root.querySelector(".combo-menu");
-  const state={ options:[], value:"", label:allLabel };
+  const state={ options:[], sel:new Set() };
 
   const normOpt=o => typeof o==="string" ? {v:o,t:o,s:o} : o;
   function setOptions(opts){ state.options=opts.map(normOpt); }
   function labelFor(v){ const o=state.options.find(o=>o.v===v); return o?o.t:v; }
+  function displayText(){
+    const n=state.sel.size;
+    if(n===0) return allLabel;
+    if(n===1) return labelFor([...state.sel][0]);
+    return n+" seleccionados";
+  }
   function render(q){
     const nq=norm(q);
     const filtered=state.options.filter(o=>!nq||norm(o.s).includes(nq));
-    let html=`<div class="combo-opt all" data-v="">${allLabel}</div>`;
+    let html=`<div class="combo-opt all" data-v="__all__">${state.sel.size?"&#10005; Limpiar selección":allLabel}</div>`;
     if(filtered.length){
       html+=filtered.slice(0,300).map(o=>{
         let disp=o.t;
         if(nq){ const i=norm(o.t).indexOf(nq);
           if(i>=0) disp=o.t.slice(0,i)+"<mark>"+o.t.slice(i,i+q.length)+"</mark>"+o.t.slice(i+q.length); }
-        return `<div class="combo-opt" data-v="${String(o.v).replace(/"/g,"&quot;")}">${disp}</div>`;
+        const on=state.sel.has(o.v);
+        return `<div class="combo-opt opt-check ${on?"sel":""}" data-v="${String(o.v).replace(/"/g,"&quot;")}">
+          <span class="ck">${on?"&#10003;":""}</span><span>${disp}</span></div>`;
       }).join("");
       if(filtered.length>300) html+=`<div class="combo-empty">… ${filtered.length-300} más, refina la búsqueda</div>`;
     }else{
@@ -742,11 +759,13 @@ function makeCombo(mountSel, allLabel, onChange){
     menu.innerHTML=html;
   }
   function open(){ input.removeAttribute("readonly"); input.value=""; render(""); menu.classList.add("open"); input.focus(); }
-  function close(){ input.setAttribute("readonly","true"); input.value=state.label; menu.classList.remove("open"); }
-  function pick(v){
-    state.value=v;
-    state.label = v===""? allLabel : labelFor(v);
-    close(); onChange(v);
+  function close(){ input.setAttribute("readonly","true"); input.value=displayText(); menu.classList.remove("open"); }
+  function toggle(v){
+    if(v==="__all__"){ state.sel.clear(); }
+    else if(state.sel.has(v)) state.sel.delete(v);
+    else state.sel.add(v);
+    render(input.value);              // mantiene el menú abierto
+    onChange();
   }
 
   input.addEventListener("focus",open);
@@ -754,12 +773,13 @@ function makeCombo(mountSel, allLabel, onChange){
   input.addEventListener("input",()=>render(input.value));
   menu.addEventListener("mousedown",e=>{
     const opt=e.target.closest(".combo-opt"); if(!opt) return;
-    e.preventDefault(); pick(opt.dataset.v);
+    e.preventDefault(); toggle(opt.dataset.v);
   });
-  input.addEventListener("blur",()=>setTimeout(close,120));
+  input.addEventListener("blur",()=>setTimeout(close,140));
 
-  return { setOptions, get value(){return state.value;},
-    reset(){ state.value=""; state.label=allLabel; input.value=allLabel; } };
+  return { setOptions,
+    get values(){ return [...state.sel]; },
+    reset(){ state.sel.clear(); input.value=allLabel; menu.classList.remove("open"); } };
 }
 
 const combos={
@@ -783,11 +803,13 @@ $("#btnReset").onclick=()=>{
 };
 
 function applyFilters(){
-  const a=combos.articulo.value, n=combos.nit.value, c=combos.centro.value,
-        p=combos.placa.value, q=norm($("#fSearch").value);
+  const a=new Set(combos.articulo.values), n=new Set(combos.nit.values),
+        c=new Set(combos.centro.values), p=new Set(combos.placa.values),
+        q=norm($("#fSearch").value);
   VIEW=RAW.filter(r=>
-    (!a||r.articulo===a)&&(!n||r.nit===n)&&(!c||r.centro===c)&&(!p||r.placa===p)&&
-    (!q || norm(r.nombre).includes(q)||norm(r.modelo).includes(q)||
+    (!a.size||a.has(r.articulo))&&(!n.size||n.has(r.nit))&&
+    (!c.size||c.has(r.centro))&&(!p.size||p.has(r.placa))&&
+    (!q || norm(r.nombre).includes(q)||norm(r.numfis).includes(q)||
            norm(r.codigo).includes(q)||norm(r.articulo).includes(q))
   );
   $("#resCount").textContent=VIEW.length.toLocaleString("es-CO");
@@ -805,7 +827,7 @@ function renderTable(){
       <td class="mono">${r.nit||"—"}</td>
       <td>${r.centro}</td>
       <td><span class="badge">${r.placa||"s/p"}</span></td>
-      <td>${r.modelo||"—"}</td>
+      <td>${r.numfis||"—"}</td>
       <td class="r">${r.cantidad}</td>
       <td class="r">${money(r.valor)}</td>
     </tr>`).join("")
@@ -819,9 +841,9 @@ $("#nextPage").onclick=()=>{const tp=Math.ceil(VIEW.length/PER_PAGE);if(page<tp)
 /* ====== Exportar CSV ====== */
 $("#btnExport").onclick=()=>{
   if(!VIEW.length){toast("No hay datos para exportar","err");return;}
-  const head=["articulo","nombre","nit","centro_costos","placa","modelo","cantidad","valor_articulo"];
+  const head=["articulo","nombre","nit","centro_costos","placa","numeracion_fisica","cantidad","valor_articulo"];
   const lines=[head.join(";")].concat(VIEW.map(r=>
-    [r.articulo,r.nombre,r.nit,r.centro,r.placa,r.modelo,r.cantidad,r.valor]
+    [r.articulo,r.nombre,r.nit,r.centro,r.placa,r.numfis,r.cantidad,r.valor]
       .map(v=>`"${String(v).replace(/"/g,'""')}"`).join(";")));
   const blob=new Blob(["\uFEFF"+lines.join("\n")],{type:"text/csv;charset=utf-8;"});
   const a=document.createElement("a");
