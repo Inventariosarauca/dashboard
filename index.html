@@ -112,6 +112,9 @@
     box-shadow:var(--shadow); position:sticky; top:108px; z-index:20;}
   .filters-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:13px}
   .panel-filters{position:static; margin-bottom:22px}
+  .panel-filters .count{margin-right:14px}
+  .nit-name{font-size:.8rem; font-weight:600; color:var(--teal-deep); margin-right:auto}
+  .nit-name:empty{display:none}
   /* combo con búsqueda */
   .combo{position:relative}
   .combo-input{width:100%; background:var(--bg); border:1px solid var(--line); color:var(--txt);
@@ -220,12 +223,13 @@
       </div>
       <div class="filters panel-filters">
         <div class="filters-grid">
-          <div class="fld"><label>Centro de costos</label><select id="pCentro"></select></div>
-          <div class="fld"><label>Artículo</label><select id="pArticulo"></select></div>
-          <div class="fld"><label>NIT</label><select id="pNit"></select></div>
+          <div class="fld"><label>Centro de costos</label><div class="combo" id="cpCentro"></div></div>
+          <div class="fld"><label>Artículo</label><div class="combo" id="cpArticulo"></div></div>
+          <div class="fld"><label>NIT (servidor)</label><div class="combo" id="cpNit"></div></div>
         </div>
         <div class="filters-foot">
           <span class="count">Datos del panel: <b id="pCount">0</b> registros</span>
+          <span id="pNitName" class="nit-name"></span>
           <button class="btn ghost" id="pReset">&#8635; Limpiar filtros</button>
         </div>
       </div>
@@ -247,6 +251,26 @@
             <span style="font-size:.74rem;color:var(--txt-dim)">orden desc.</span>
           </div>
           <div class="cc-list" id="ccList"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:18px">
+        <div class="card-head">
+          <h3><span class="acc" style="background:var(--violet)"></span>Detalle de registros mostrados</h3>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+            <span style="font-size:.78rem;color:var(--txt-dim)">Visibles: <b id="pShown" class="mono" style="color:var(--violet)">0</b> / <b id="pTotal" class="mono">0</b></span>
+            <button class="btn ghost" id="pToggleAll">Ver todos</button>
+          </div>
+        </div>
+        <div class="table-wrap" style="max-height:520px">
+          <table>
+            <thead><tr>
+              <th>Artículo</th><th>Servidor (nombre)</th><th>NIT</th>
+              <th>Centro de costos</th><th>Placa</th>
+              <th class="r">Cant.</th><th class="r">Valor unit.</th>
+            </tr></thead>
+            <tbody id="pTbody"></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -422,29 +446,70 @@ function showData(){
   applyFilters();
 }
 
-/* ====== Filtros del Panel ====== */
-function buildPanelOptions(){
-  fillSel("#pCentro","Todos los centros",uniq("centro"));
-  fillSel("#pArticulo","Todos los artículos",uniq("articulo"));
-  fillSel("#pNit","Todos los NIT",uniq("nit"));
+/* ====== Filtros del Panel (combos con búsqueda) ====== */
+let panelCombos=null;
+let pShowAll=false;
+
+function nitName(nit){
+  const r=RAW.find(r=>r.nit===nit && r.nombre);
+  return r ? r.nombre : "";
 }
-function fillSel(sel,allLabel,vals){
-  $(sel).innerHTML=`<option value="">${allLabel} (${vals.length})</option>`+
-    vals.map(v=>`<option value="${String(v).replace(/"/g,"&quot;")}">${v}</option>`).join("");
+function nitOptions(){
+  return uniq("nit").map(n=>{
+    const nm=nitName(n);
+    return { v:n, t: nm ? `${n} — ${nm}` : n, s: n+" "+nm };
+  });
+}
+function buildPanelOptions(){
+  if(!panelCombos){
+    panelCombos={
+      centro:   makeCombo("#cpCentro","Todos los centros",refreshPanel),
+      articulo: makeCombo("#cpArticulo","Todos los artículos",refreshPanel),
+      nit:      makeCombo("#cpNit","Todos los NIT",refreshPanel),
+    };
+  }
+  panelCombos.centro.setOptions(uniq("centro"));
+  panelCombos.articulo.setOptions(uniq("articulo"));
+  panelCombos.nit.setOptions(nitOptions());
+  Object.values(panelCombos).forEach(c=>c.reset());
 }
 function panelFiltered(){
-  const c=$("#pCentro").value, a=$("#pArticulo").value, n=$("#pNit").value;
+  const c=panelCombos.centro.value, a=panelCombos.articulo.value, n=panelCombos.nit.value;
   return RAW.filter(r=>(!c||r.centro===c)&&(!a||r.articulo===a)&&(!n||r.nit===n));
 }
 function refreshPanel(){
   const data=panelFiltered();
   $("#pCount").textContent=data.length.toLocaleString("es-CO");
+  const nv=panelCombos.nit.value;
+  $("#pNitName").textContent = nv ? ("Servidor: "+(nitName(nv)||"sin nombre")) : "";
   buildKPIs(data);
   buildChart(data);
   buildCentros(data);
+  renderPanelTable(data);
 }
-["#pCentro","#pArticulo","#pNit"].forEach(s=>$(s).addEventListener("change",refreshPanel));
-$("#pReset").onclick=()=>{ ["#pCentro","#pArticulo","#pNit"].forEach(s=>$(s).value=""); refreshPanel(); };
+function renderPanelTable(data){
+  $("#pTotal").textContent=data.length.toLocaleString("es-CO");
+  const limit=pShowAll?data.length:100;
+  const slice=data.slice(0,limit);
+  $("#pShown").textContent=slice.length.toLocaleString("es-CO");
+  $("#pTbody").innerHTML = slice.length ? slice.map(r=>`
+    <tr>
+      <td><b>${r.articulo}</b></td>
+      <td>${r.nombre||"—"}</td>
+      <td class="mono">${r.nit||"—"}</td>
+      <td>${r.centro}</td>
+      <td><span class="badge">${r.placa||"s/p"}</span></td>
+      <td class="r">${r.cantidad}</td>
+      <td class="r">${money(r.valor)}</td>
+    </tr>`).join("")
+    : `<tr><td colspan="7" style="text-align:center;padding:34px;color:var(--txt-dim)">Sin registros para los filtros aplicados.</td></tr>`;
+  const btn=$("#pToggleAll");
+  if(data.length>100){ btn.style.display="inline-flex";
+    btn.textContent = pShowAll ? "Mostrar menos" : ("Ver todos ("+data.length+")"); }
+  else btn.style.display="none";
+}
+$("#pToggleAll").onclick=()=>{ pShowAll=!pShowAll; renderPanelTable(panelFiltered()); };
+$("#pReset").onclick=()=>{ Object.values(panelCombos).forEach(c=>c.reset()); pShowAll=false; refreshPanel(); };
 
 /* ====== KPIs ====== */
 function buildKPIs(data){
@@ -548,6 +613,7 @@ function uniq(field){
 }
 
 // Componente combo: input con búsqueda + menú filtrable
+// opts: array de strings  ó  de objetos {v:valor, t:textoMostrado, s:textoBusqueda}
 function makeCombo(mountSel, allLabel, onChange){
   const root=$(mountSel);
   root.innerHTML=`<input class="combo-input" type="text" readonly placeholder="${allLabel}">
@@ -557,17 +623,19 @@ function makeCombo(mountSel, allLabel, onChange){
   const menu=root.querySelector(".combo-menu");
   const state={ options:[], value:"", label:allLabel };
 
-  function setOptions(opts){ state.options=opts; }
+  const normOpt=o => typeof o==="string" ? {v:o,t:o,s:o} : o;
+  function setOptions(opts){ state.options=opts.map(normOpt); }
+  function labelFor(v){ const o=state.options.find(o=>o.v===v); return o?o.t:v; }
   function render(q){
     const nq=norm(q);
-    const filtered=state.options.filter(o=>!nq||norm(o).includes(nq));
+    const filtered=state.options.filter(o=>!nq||norm(o.s).includes(nq));
     let html=`<div class="combo-opt all" data-v="">${allLabel}</div>`;
     if(filtered.length){
       html+=filtered.slice(0,300).map(o=>{
-        let disp=o;
-        if(nq){ const i=norm(o).indexOf(nq);
-          if(i>=0) disp=o.slice(0,i)+"<mark>"+o.slice(i,i+q.length)+"</mark>"+o.slice(i+q.length); }
-        return `<div class="combo-opt" data-v="${String(o).replace(/"/g,"&quot;")}">${disp}</div>`;
+        let disp=o.t;
+        if(nq){ const i=norm(o.t).indexOf(nq);
+          if(i>=0) disp=o.t.slice(0,i)+"<mark>"+o.t.slice(i,i+q.length)+"</mark>"+o.t.slice(i+q.length); }
+        return `<div class="combo-opt" data-v="${String(o.v).replace(/"/g,"&quot;")}">${disp}</div>`;
       }).join("");
       if(filtered.length>300) html+=`<div class="combo-empty">… ${filtered.length-300} más, refina la búsqueda</div>`;
     }else{
@@ -579,7 +647,7 @@ function makeCombo(mountSel, allLabel, onChange){
   function close(){ input.setAttribute("readonly","true"); input.value=state.label; menu.classList.remove("open"); }
   function pick(v){
     state.value=v;
-    state.label = v===""? allLabel : v;
+    state.label = v===""? allLabel : labelFor(v);
     close(); onChange(v);
   }
 
