@@ -872,34 +872,63 @@ async function initFirebase(raw,silent){
   }
 }
 
+const CHUNK_SIZE=300;  // registros por documento (evita el límite de 1 MB de Firestore)
+const INV_ID="inventario_actual";  // documento único que se sobrescribe
+
 $("#btnSave").onclick=async()=>{
   if(!fb.db){ toast("Conecta Firebase primero","err"); return; }
   if(!RAW.length){ toast("No hay datos cargados","err"); return; }
   try{
-    const {collection,addDoc,serverTimestamp}=fb._fs;
+    const {collection,doc,getDocs,writeBatch,serverTimestamp}=fb._fs;
     const totalValor=RAW.reduce((a,r)=>a+r.valor*r.cantidad,0);
-    await addDoc(collection(fb.db,"inventarios_arauca"),{
-      creado:serverTimestamp(),
-      registros:RAW.length,
-      valor_total:totalValor,
-      centros:[...new Set(RAW.map(r=>r.centro))].length,
-      datos:RAW
-    });
-    toast("Inventario guardado en Firestore","ok");
+    const parent=doc(fb.db,"inventarios_arauca",INV_ID);
+    const partsCol=collection(fb.db,"inventarios_arauca",INV_ID,"partes");
+
+    const chunks=[];
+    for(let i=0;i<RAW.length;i+=CHUNK_SIZE) chunks.push(RAW.slice(i,i+CHUNK_SIZE));
+    const newIds=new Set(chunks.map((_,i)=>String(i).padStart(5,"0")));
+
+    toast("Guardando "+RAW.length+" registros…");
+    // partes anteriores: las que sobren se eliminan
+    const prev=await getDocs(partsCol);
+
+    let batch=writeBatch(fb.db), ops=0;
+    const flush=async(force)=>{ if(ops>=450||(force&&ops>0)){ await batch.commit(); batch=writeBatch(fb.db); ops=0; } };
+
+    batch.set(parent,{
+      actualizado:serverTimestamp(), registros:RAW.length, valor_total:totalValor,
+      centros:[...new Set(RAW.map(r=>r.centro))].length, partes:chunks.length
+    }); ops++;
+
+    for(let idx=0;idx<chunks.length;idx++){
+      const cdoc=doc(fb.db,"inventarios_arauca",INV_ID,"partes",String(idx).padStart(5,"0"));
+      batch.set(cdoc,{idx, datos:chunks[idx]}); ops++; await flush(false);
+    }
+    prev.forEach(d=>{ if(!newIds.has(d.id)){ batch.delete(d.ref); ops++; } });
+    await flush(true);
+    toast("Inventario actualizado ("+chunks.length+" partes)","ok");
   }catch(err){ console.error(err); toast("Error al guardar: "+(err.code||err.message),"err"); }
 };
 
 $("#btnLoad").onclick=async()=>{
   if(!fb.db){ toast("Conecta Firebase primero","err"); $("#fbModal").classList.add("open"); return; }
   try{
-    const {collection,getDocs,query,orderBy,limit}=fb._fs;
-    const q=query(collection(fb.db,"inventarios_arauca"),orderBy("creado","desc"),limit(1));
-    const snap=await getDocs(q);
-    if(snap.empty){ toast("No hay inventarios guardados","err"); return; }
-    const doc=snap.docs[0].data();
-    RAW=doc.datos||[];
+    const {collection,doc,getDoc,getDocs,query,orderBy}=fb._fs;
+    toast("Cargando desde la nube…");
+    const parentRef=doc(fb.db,"inventarios_arauca",INV_ID);
+    const parentSnap=await getDoc(parentRef);
+    if(!parentSnap.exists()){ toast("No hay inventario guardado","err"); return; }
+    let datos=[];
+    const partsSnap=await getDocs(query(collection(fb.db,"inventarios_arauca",INV_ID,"partes"),orderBy("idx","asc")));
+    if(!partsSnap.empty){
+      partsSnap.forEach(d=>{ datos=datos.concat(d.data().datos||[]); });
+    }else{
+      datos=parentSnap.data().datos||[];   // compatibilidad guardado antiguo
+    }
+    if(!datos.length){ toast("El inventario guardado está vacío","err"); return; }
+    RAW=datos;
     showData();
-    toast("Inventario cargado desde la nube ("+RAW.length+" registros)","ok");
+    toast("Inventario cargado ("+RAW.length+" registros)","ok");
   }catch(err){ console.error(err); toast("Error al cargar: "+(err.code||err.message),"err"); }
 };
 </script>
