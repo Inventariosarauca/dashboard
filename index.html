@@ -111,6 +111,27 @@
     border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:18px;
     box-shadow:var(--shadow); position:sticky; top:108px; z-index:20;}
   .filters-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:13px}
+  .panel-filters{position:static; margin-bottom:22px}
+  /* combo con búsqueda */
+  .combo{position:relative}
+  .combo-input{width:100%; background:var(--bg); border:1px solid var(--line); color:var(--txt);
+    padding:10px 30px 10px 12px; border-radius:10px; font-family:'DM Sans'; font-size:.86rem; cursor:text}
+  .combo-input:focus{outline:none; border-color:var(--amber); box-shadow:0 0 0 3px rgba(240,137,12,.15)}
+  .combo-input::placeholder{color:var(--txt-faint)}
+  .combo .caret{position:absolute; right:11px; top:50%; transform:translateY(-50%); color:var(--txt-faint);
+    font-size:.7rem; pointer-events:none}
+  .combo-menu{position:absolute; left:0; right:0; top:calc(100% + 4px); background:var(--panel);
+    border:1px solid var(--line); border-radius:11px; box-shadow:0 18px 40px -18px rgba(20,45,80,.4);
+    max-height:240px; overflow:auto; z-index:30; display:none}
+  .combo-menu.open{display:block}
+  .combo-opt{padding:9px 12px; font-size:.84rem; cursor:pointer; border-bottom:1px solid var(--line-soft)}
+  .combo-opt:last-child{border-bottom:none}
+  .combo-opt:hover,.combo-opt.active{background:rgba(240,137,12,.10)}
+  .combo-opt.all{font-weight:600; color:var(--teal-deep)}
+  .combo-opt mark{background:rgba(240,137,12,.30); color:inherit; border-radius:3px}
+  .combo-empty{padding:11px 12px; font-size:.82rem; color:var(--txt-faint)}
+  .combo-menu::-webkit-scrollbar{width:8px}
+  .combo-menu::-webkit-scrollbar-thumb{background:var(--line); border-radius:8px}
   .fld label{display:block; font-size:.72rem; font-weight:600; color:var(--txt-dim);
     text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px}
   .fld select, .fld input{width:100%; background:var(--bg); border:1px solid var(--line); color:var(--txt);
@@ -197,6 +218,17 @@
         <span class="chip">Cravo Norte</span><span class="chip">Tame</span><span class="chip">Fortul</span>
         <span class="chip">Puerto Rondón</span><span class="chip">Cubará</span>
       </div>
+      <div class="filters panel-filters">
+        <div class="filters-grid">
+          <div class="fld"><label>Centro de costos</label><select id="pCentro"></select></div>
+          <div class="fld"><label>Artículo</label><select id="pArticulo"></select></div>
+          <div class="fld"><label>NIT</label><select id="pNit"></select></div>
+        </div>
+        <div class="filters-foot">
+          <span class="count">Datos del panel: <b id="pCount">0</b> registros</span>
+          <button class="btn ghost" id="pReset">&#8635; Limpiar filtros</button>
+        </div>
+      </div>
       <div class="kpis" id="kpis"></div>
       <div class="grid cols-2">
         <div class="card">
@@ -230,10 +262,10 @@
     <div id="filtrosContent" style="display:none">
       <div class="filters">
         <div class="filters-grid">
-          <div class="fld"><label>Artículo</label><select id="fArticulo"></select></div>
-          <div class="fld"><label>NIT</label><select id="fNit"></select></div>
-          <div class="fld"><label>Centro de costos</label><select id="fCentro"></select></div>
-          <div class="fld"><label>Placa</label><select id="fPlaca"></select></div>
+          <div class="fld"><label>Artículo</label><div class="combo" id="cArticulo"></div></div>
+          <div class="fld"><label>NIT</label><div class="combo" id="cNit"></div></div>
+          <div class="fld"><label>Centro de costos</label><div class="combo" id="cCentro"></div></div>
+          <div class="fld"><label>Placa</label><div class="combo" id="cPlaca"></div></div>
           <div class="fld"><label>Búsqueda libre</label><input id="fSearch" type="text" placeholder="Nombre, modelo, código…" /></div>
         </div>
         <div class="filters-foot">
@@ -384,22 +416,45 @@ function showData(){
   $("#filtrosEmpty").style.display="none";
   $("#filtrosContent").style.display="block";
   $("#btnSave").disabled = !fb.db;
-  buildKPIs();
-  buildChart();
-  buildCentros();
+  buildPanelOptions();
+  refreshPanel();
   buildFilterOptions();
   applyFilters();
 }
 
+/* ====== Filtros del Panel ====== */
+function buildPanelOptions(){
+  fillSel("#pCentro","Todos los centros",uniq("centro"));
+  fillSel("#pArticulo","Todos los artículos",uniq("articulo"));
+  fillSel("#pNit","Todos los NIT",uniq("nit"));
+}
+function fillSel(sel,allLabel,vals){
+  $(sel).innerHTML=`<option value="">${allLabel} (${vals.length})</option>`+
+    vals.map(v=>`<option value="${String(v).replace(/"/g,"&quot;")}">${v}</option>`).join("");
+}
+function panelFiltered(){
+  const c=$("#pCentro").value, a=$("#pArticulo").value, n=$("#pNit").value;
+  return RAW.filter(r=>(!c||r.centro===c)&&(!a||r.articulo===a)&&(!n||r.nit===n));
+}
+function refreshPanel(){
+  const data=panelFiltered();
+  $("#pCount").textContent=data.length.toLocaleString("es-CO");
+  buildKPIs(data);
+  buildChart(data);
+  buildCentros(data);
+}
+["#pCentro","#pArticulo","#pNit"].forEach(s=>$(s).addEventListener("change",refreshPanel));
+$("#pReset").onclick=()=>{ ["#pCentro","#pArticulo","#pNit"].forEach(s=>$(s).value=""); refreshPanel(); };
+
 /* ====== KPIs ====== */
-function buildKPIs(){
-  const centros=new Set(RAW.map(r=>r.centro)).size;
-  const articulos=new Set(RAW.map(r=>r.articulo)).size;
-  const nits=new Set(RAW.map(r=>r.nit).filter(Boolean)).size;
-  const totalCant=RAW.reduce((a,r)=>a+r.cantidad,0);
-  const totalValor=RAW.reduce((a,r)=>a+r.valor*r.cantidad,0);
+function buildKPIs(data){
+  const centros=new Set(data.map(r=>r.centro)).size;
+  const articulos=new Set(data.map(r=>r.articulo)).size;
+  const nits=new Set(data.map(r=>r.nit).filter(Boolean)).size;
+  const totalCant=data.reduce((a,r)=>a+r.cantidad,0);
+  const totalValor=data.reduce((a,r)=>a+r.valor*r.cantidad,0);
   const cards=[
-    {c:"", l:"Total productos", v:totalCant.toLocaleString("es-CO"), s:RAW.length+" registros"},
+    {c:"", l:"Total productos", v:totalCant.toLocaleString("es-CO"), s:data.length+" registros"},
     {c:"k2", l:"Valor inventario", v:moneyShort(totalValor), s:money(totalValor)},
     {c:"k3", l:"Centros de costos", v:centros, s:"dependencias"},
     {c:"k4", l:"Categorías (artículos)", v:articulos, s:"tipos distintos"},
@@ -414,19 +469,21 @@ function buildKPIs(){
 }
 
 /* ====== Gráfico por categoría ====== */
-function buildChart(){
+function buildChart(data){
+  if(data) buildChart._d=data;
+  data=buildChart._d||[];
   const map={};
-  RAW.forEach(r=>{ map[r.articulo]=(map[r.articulo]||0)+r.valor*r.cantidad; });
+  data.forEach(r=>{ map[r.articulo]=(map[r.articulo]||0)+r.valor*r.cantidad; });
   let arr=Object.entries(map).sort((a,b)=>b[1]-a[1]);
   const TOP=12;
-  let labels, data;
+  let labels, values;
   if(arr.length>TOP){
     const top=arr.slice(0,TOP);
     const rest=arr.slice(TOP).reduce((a,x)=>a+x[1],0);
     labels=top.map(x=>x[0]).concat(["Otros ("+(arr.length-TOP)+")"]);
-    data=top.map(x=>x[1]).concat([rest]);
-  }else{ labels=arr.map(x=>x[0]); data=arr.map(x=>x[1]); }
-  renderChart(labels,data);
+    values=top.map(x=>x[1]).concat([rest]);
+  }else{ labels=arr.map(x=>x[0]); values=arr.map(x=>x[1]); }
+  renderChart(labels,values);
 }
 function renderChart(labels,data){
   if(chart) chart.destroy();
@@ -465,9 +522,9 @@ $("#chartType").addEventListener("click", e=>{
 });
 
 /* ====== Centros de costos ====== */
-function buildCentros(){
+function buildCentros(data){
   const map={};
-  RAW.forEach(r=>{
+  data.forEach(r=>{
     if(!map[r.centro]) map[r.centro]={cant:0,val:0};
     map[r.centro].cant+=r.cantidad; map[r.centro].val+=r.valor*r.cantidad;
   });
@@ -484,32 +541,84 @@ function buildCentros(){
     </div>`).join("");
 }
 
-/* ====== Filtros dinámicos ====== */
+/* ====== Filtros dinámicos (combos con búsqueda) ====== */
 function uniq(field){
   return [...new Set(RAW.map(r=>r[field]).filter(v=>v!==""&&v!=null))]
     .sort((a,b)=>String(a).localeCompare(String(b),"es"));
 }
+
+// Componente combo: input con búsqueda + menú filtrable
+function makeCombo(mountSel, allLabel, onChange){
+  const root=$(mountSel);
+  root.innerHTML=`<input class="combo-input" type="text" readonly placeholder="${allLabel}">
+    <span class="caret">&#9662;</span>
+    <div class="combo-menu"></div>`;
+  const input=root.querySelector(".combo-input");
+  const menu=root.querySelector(".combo-menu");
+  const state={ options:[], value:"", label:allLabel };
+
+  function setOptions(opts){ state.options=opts; }
+  function render(q){
+    const nq=norm(q);
+    const filtered=state.options.filter(o=>!nq||norm(o).includes(nq));
+    let html=`<div class="combo-opt all" data-v="">${allLabel}</div>`;
+    if(filtered.length){
+      html+=filtered.slice(0,300).map(o=>{
+        let disp=o;
+        if(nq){ const i=norm(o).indexOf(nq);
+          if(i>=0) disp=o.slice(0,i)+"<mark>"+o.slice(i,i+q.length)+"</mark>"+o.slice(i+q.length); }
+        return `<div class="combo-opt" data-v="${String(o).replace(/"/g,"&quot;")}">${disp}</div>`;
+      }).join("");
+      if(filtered.length>300) html+=`<div class="combo-empty">… ${filtered.length-300} más, refina la búsqueda</div>`;
+    }else{
+      html+=`<div class="combo-empty">Sin coincidencias</div>`;
+    }
+    menu.innerHTML=html;
+  }
+  function open(){ input.removeAttribute("readonly"); input.value=""; render(""); menu.classList.add("open"); input.focus(); }
+  function close(){ input.setAttribute("readonly","true"); input.value=state.label; menu.classList.remove("open"); }
+  function pick(v){
+    state.value=v;
+    state.label = v===""? allLabel : v;
+    close(); onChange(v);
+  }
+
+  input.addEventListener("focus",open);
+  input.addEventListener("click",open);
+  input.addEventListener("input",()=>render(input.value));
+  menu.addEventListener("mousedown",e=>{
+    const opt=e.target.closest(".combo-opt"); if(!opt) return;
+    e.preventDefault(); pick(opt.dataset.v);
+  });
+  input.addEventListener("blur",()=>setTimeout(close,120));
+
+  return { setOptions, get value(){return state.value;},
+    reset(){ state.value=""; state.label=allLabel; input.value=allLabel; } };
+}
+
+const combos={
+  articulo: makeCombo("#cArticulo","Todos los artículos",()=>{page=1;applyFilters();}),
+  nit:      makeCombo("#cNit","Todos los NIT",()=>{page=1;applyFilters();}),
+  centro:   makeCombo("#cCentro","Todos los centros",()=>{page=1;applyFilters();}),
+  placa:    makeCombo("#cPlaca","Todas las placas",()=>{page=1;applyFilters();}),
+};
+
 function buildFilterOptions(){
-  fill("#fArticulo","Todos los artículos",uniq("articulo"));
-  fill("#fNit","Todos los NIT",uniq("nit"));
-  fill("#fCentro","Todos los centros",uniq("centro"));
-  fill("#fPlaca","Todas las placas",uniq("placa"));
+  combos.articulo.setOptions(uniq("articulo"));
+  combos.nit.setOptions(uniq("nit"));
+  combos.centro.setOptions(uniq("centro"));
+  combos.placa.setOptions(uniq("placa"));
+  Object.values(combos).forEach(c=>c.reset());
 }
-function fill(sel,allLabel,vals){
-  const el=$(sel);
-  el.innerHTML=`<option value="">${allLabel} (${vals.length})</option>`+
-    vals.map(v=>`<option value="${String(v).replace(/"/g,"&quot;")}">${v}</option>`).join("");
-}
-["#fArticulo","#fNit","#fCentro","#fPlaca"].forEach(s=>$(s).addEventListener("change",()=>{page=1;applyFilters();}));
 $("#fSearch").addEventListener("input",()=>{page=1;applyFilters();});
 $("#btnReset").onclick=()=>{
-  ["#fArticulo","#fNit","#fCentro","#fPlaca"].forEach(s=>$(s).value="");
+  Object.values(combos).forEach(c=>c.reset());
   $("#fSearch").value=""; page=1; applyFilters();
 };
 
 function applyFilters(){
-  const a=$("#fArticulo").value, n=$("#fNit").value, c=$("#fCentro").value,
-        p=$("#fPlaca").value, q=norm($("#fSearch").value);
+  const a=combos.articulo.value, n=combos.nit.value, c=combos.centro.value,
+        p=combos.placa.value, q=norm($("#fSearch").value);
   VIEW=RAW.filter(r=>
     (!a||r.articulo===a)&&(!n||r.nit===n)&&(!c||r.centro===c)&&(!p||r.placa===p)&&
     (!q || norm(r.nombre).includes(q)||norm(r.modelo).includes(q)||
