@@ -565,6 +565,8 @@ function refreshPanel(){
   renderPanelTable(data);
 }
 function renderPanelTable(data){
+  data=[...data].sort((a,b)=>
+    String(a.articulo).localeCompare(String(b.articulo),"es",{sensitivity:"base",numeric:true}));
   lastPanelData=data;
   $("#pTotal").textContent=data.length.toLocaleString("es-CO");
   const limit=pShowAll?data.length:100;
