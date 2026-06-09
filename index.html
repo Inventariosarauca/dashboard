@@ -292,13 +292,14 @@
           <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
             <span style="font-size:.78rem;color:var(--txt-dim)">Visibles: <b id="pShown" class="mono" style="color:var(--violet)">0</b> / <b id="pTotal" class="mono">0</b></span>
             <button class="btn ghost" id="pToggleAll">Ver todos</button>
+            <button class="btn teal" id="pPrint">&#128424; Imprimir / PDF</button>
           </div>
         </div>
         <div class="table-wrap" style="max-height:520px">
           <table>
             <thead><tr>
               <th>Artículo</th><th>Servidor (nombre)</th><th>NIT</th>
-              <th>Centro de costos</th><th>Placa</th>
+              <th>Centro de costos</th><th>Placa</th><th>Numeración física</th>
               <th class="r">Cant.</th><th class="r">Valor unit.</th>
             </tr></thead>
             <tbody id="pTbody"></tbody>
@@ -499,6 +500,7 @@ function showData(){
 /* ====== Filtros del Panel (combos con búsqueda) ====== */
 let panelCombos=null;
 let pShowAll=false;
+let lastPanelData=[];
 const selectedMunis=new Set();
 
 function buildMuniChips(){
@@ -563,6 +565,7 @@ function refreshPanel(){
   renderPanelTable(data);
 }
 function renderPanelTable(data){
+  lastPanelData=data;
   $("#pTotal").textContent=data.length.toLocaleString("es-CO");
   const limit=pShowAll?data.length:100;
   const slice=data.slice(0,limit);
@@ -574,16 +577,91 @@ function renderPanelTable(data){
       <td class="mono">${r.nit||"—"}</td>
       <td>${r.centro}</td>
       <td><span class="badge">${r.placa||"s/p"}</span></td>
+      <td>${r.numfis||"—"}</td>
       <td class="r">${r.cantidad}</td>
       <td class="r">${money(r.valor)}</td>
     </tr>`).join("")
-    : `<tr><td colspan="7" style="text-align:center;padding:34px;color:var(--txt-dim)">Sin registros para los filtros aplicados.</td></tr>`;
+    : `<tr><td colspan="8" style="text-align:center;padding:34px;color:var(--txt-dim)">Sin registros para los filtros aplicados.</td></tr>`;
   const btn=$("#pToggleAll");
   if(data.length>100){ btn.style.display="inline-flex";
     btn.textContent = pShowAll ? "Mostrar menos" : ("Ver todos ("+data.length+")"); }
   else btn.style.display="none";
 }
 $("#pToggleAll").onclick=()=>{ pShowAll=!pShowAll; renderPanelTable(panelFiltered()); };
+
+/* ====== Imprimir / PDF del detalle ====== */
+function activeFiltersText(){
+  const parts=[];
+  if(selectedMunis.size) parts.push("Municipios: "+[...selectedMunis].join(", "));
+  const cv=panelCombos.centro.values, av=panelCombos.articulo.values, nv=panelCombos.nit.values;
+  if(cv.length) parts.push("Centros: "+cv.join(", "));
+  if(av.length) parts.push("Artículos: "+av.join(", "));
+  if(nv.length) parts.push("NIT: "+nv.join(", "));
+  return parts.length ? parts.join(" · ") : "Todos los registros de la región Arauca";
+}
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+$("#pPrint").onclick=()=>{
+  const data=lastPanelData||[];
+  if(!data.length){ toast("No hay registros para imprimir","err"); return; }
+  const totalCant=data.reduce((a,r)=>a+r.cantidad,0);
+  const totalValor=data.reduce((a,r)=>a+r.valor*r.cantidad,0);
+  const fecha=new Date().toLocaleString("es-CO");
+
+  const rows=data.map((r,i)=>`<tr>
+    <td class="c">${i+1}</td>
+    <td>${esc(r.articulo)}</td>
+    <td>${esc(r.nombre||"")}</td>
+    <td>${esc(r.nit||"")}</td>
+    <td>${esc(r.centro)}</td>
+    <td class="c">${esc(r.placa||"")}</td>
+    <td class="c">${esc(r.numfis||"")}</td>
+    <td class="r">${r.cantidad}</td>
+    <td class="r">$${Math.round(r.valor).toLocaleString("es-CO")}</td>
+  </tr>`).join("");
+
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+  <title>Inventario Arauca - Detalle</title>
+  <style>
+    *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif; color:#13202f; margin:24px}
+    h1{font-size:17px; margin:0 0 2px} .sub{font-size:11px; color:#5b6c80; margin-bottom:2px}
+    .meta{font-size:11px; margin:10px 0 4px}
+    .tot{font-size:12px; font-weight:bold; margin:6px 0 12px}
+    table{width:100%; border-collapse:collapse; font-size:10px}
+    th,td{border:1px solid #c9d4e0; padding:4px 6px; text-align:left; vertical-align:top}
+    th{background:#f0890c; color:#fff; font-size:10px}
+    tr:nth-child(even) td{background:#f5f8fc}
+    td.r,th.r{text-align:right} td.c,th.c{text-align:center}
+    @page{size:landscape; margin:12mm}
+    @media print{ body{margin:0} }
+  </style></head><body>
+    <h1>Inventario Región Arauca — Detalle de registros</h1>
+    <div class="sub">Generado: ${esc(fecha)}</div>
+    <div class="meta"><b>Filtros aplicados:</b> ${esc(activeFiltersText())}</div>
+    <div class="tot">Registros: ${data.length.toLocaleString("es-CO")} &nbsp;·&nbsp; Unidades: ${totalCant.toLocaleString("es-CO")} &nbsp;·&nbsp; Valor total: $${Math.round(totalValor).toLocaleString("es-CO")}</div>
+    <table>
+      <thead><tr>
+        <th class="c">#</th><th>Artículo</th><th>Servidor</th><th>NIT</th>
+        <th>Centro de costos</th><th class="c">Placa</th><th class="c">Num. física</th>
+        <th class="r">Cant.</th><th class="r">Valor unit.</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </body></html>`;
+
+  const ifr=document.createElement("iframe");
+  ifr.style.position="fixed"; ifr.style.right="0"; ifr.style.bottom="0";
+  ifr.style.width="0"; ifr.style.height="0"; ifr.style.border="0";
+  document.body.appendChild(ifr);
+  const d=ifr.contentWindow.document;
+  d.open(); d.write(html); d.close();
+  ifr.onload=()=>{
+    try{ ifr.contentWindow.focus(); ifr.contentWindow.print(); }
+    catch(e){ toast("No se pudo abrir la impresión","err"); }
+    setTimeout(()=>document.body.removeChild(ifr),1000);
+  };
+  toast("Preparando documento ("+data.length+" registros)…","ok");
+};
 $("#pReset").onclick=()=>{
   Object.values(panelCombos).forEach(c=>c.reset());
   selectedMunis.clear();
