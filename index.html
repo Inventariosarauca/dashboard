@@ -292,6 +292,7 @@
           <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
             <span style="font-size:.78rem;color:var(--txt-dim)">Visibles: <b id="pShown" class="mono" style="color:var(--violet)">0</b> / <b id="pTotal" class="mono">0</b></span>
             <button class="btn ghost" id="pToggleAll">Ver todos</button>
+            <button class="btn ghost" id="pExcel">&#128202; Descargar .xls</button>
             <button class="btn teal" id="pPrint">&#128424; Imprimir / PDF</button>
           </div>
         </div>
@@ -590,6 +591,28 @@ function renderPanelTable(data){
   else btn.style.display="none";
 }
 $("#pToggleAll").onclick=()=>{ pShowAll=!pShowAll; renderPanelTable(panelFiltered()); };
+
+/* ====== Descargar detalle en Excel (.xls) ====== */
+$("#pExcel").onclick=()=>{
+  const data=lastPanelData||[];
+  if(!data.length){ toast("No hay registros para descargar","err"); return; }
+  const rows=data.map(r=>({
+    "Artículo":r.articulo, "Servidor":r.nombre||"", "NIT":r.nit||"",
+    "Centro de costos":r.centro, "Municipio":r.municipio||"", "Placa":r.placa||"",
+    "Numeración física":r.numfis||"", "Cantidad":r.cantidad, "Valor unitario":Math.round(r.valor),
+    "Valor total":Math.round(r.valor*r.cantidad)
+  }));
+  const ws=XLSX.utils.json_to_sheet(rows);
+  ws["!cols"]=[{wch:34},{wch:30},{wch:14},{wch:34},{wch:14},{wch:12},{wch:16},{wch:9},{wch:14},{wch:14}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Detalle Arauca");
+  try{
+    XLSX.writeFile(wb,"inventario_arauca_detalle.xls",{bookType:"biff8"});
+  }catch(e){
+    XLSX.writeFile(wb,"inventario_arauca_detalle.xlsx");  // respaldo
+  }
+  toast("Archivo Excel descargado ("+data.length+" registros)","ok");
+};
 
 /* ====== Imprimir / PDF del detalle ====== */
 function activeFiltersText(){
