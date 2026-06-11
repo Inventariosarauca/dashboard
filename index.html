@@ -221,8 +221,8 @@
     <button class="btn ghost" id="btnFb">&#9881; Firebase</button>
   </div>
   <nav class="tabs">
-    <button class="tab active" data-view="panel">&#128202; Panel</button>
-    <button class="tab" data-view="filtros">&#128269; Filtros dinámicos</button>
+    <button class="tab active" data-view="panel">&#128202; Panel Arauca</button>
+    <button class="tab" data-view="general">&#128203; Inventario General</button>
   </nav>
 </header>
 
@@ -310,42 +310,59 @@
     </div>
   </section>
 
-  <section class="view" id="view-filtros">
-    <div id="filtrosEmpty" class="empty">
-      <div class="ic">&#128269;</div>
-      <h2>Sin datos cargados</h2>
-      <p>Carga primero un archivo de inventario desde el botón superior para habilitar los filtros dinámicos.</p>
-      <label class="btn primary" for="fileInput">Cargar archivo</label>
+  <section class="view" id="view-general">
+    <div id="genEmpty" class="empty" ondragover="event.preventDefault();this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="dropGen(event)">
+      <div class="ic">&#128203;</div>
+      <h2>Inventario general</h2>
+      <p>Carga un archivo <b>.xls</b>, <b>.xlsx</b> o <b>.csv</b> del inventario general. El tablero lo analiza y permite filtrar por la columna <b>descripcion_estado</b> (estado del bien: en uso, baja, reintegro, etc.).</p>
+      <label class="btn primary" for="genInput">Seleccionar archivo</label>
+      <input id="genInput" type="file" accept=".xls,.xlsx,.csv" hidden />
     </div>
-    <div id="filtrosContent" style="display:none">
-      <div class="filters">
-        <div class="filters-grid">
-          <div class="fld"><label>Artículo</label><div class="combo" id="cArticulo"></div></div>
-          <div class="fld"><label>NIT</label><div class="combo" id="cNit"></div></div>
-          <div class="fld"><label>Centro de costos</label><div class="combo" id="cCentro"></div></div>
-          <div class="fld"><label>Placa</label><div class="combo" id="cPlaca"></div></div>
-          <div class="fld"><label>Búsqueda libre</label><input id="fSearch" type="text" placeholder="Nombre, modelo, código…" /></div>
+
+    <div id="genContent" style="display:none">
+      <div class="filters panel-filters">
+        <div class="muni-bar">
+          <span class="muni-title">Columna de estado:</span>
+          <select id="genEstadoCol" style="background:var(--bg);border:1px solid var(--line);color:var(--txt);padding:8px 11px;border-radius:9px;font-family:'DM Sans';font-size:.84rem;max-width:340px"></select>
+          <span style="font-size:.74rem;color:var(--txt-faint)">(se detecta automáticamente; puedes cambiarla)</span>
         </div>
-        <div class="filters-foot">
-          <span class="count">Mostrando <b id="resCount">0</b> de <b id="resTotal">0</b> registros</span>
-          <button class="btn ghost" id="btnReset">&#8635; Limpiar</button>
-          <button class="btn teal" id="btnExport">&#10515; Exportar CSV</button>
+        <div class="muni-bar" style="border-bottom:none;padding-bottom:0;margin-bottom:0">
+          <span class="muni-title">descripcion_estado:</span>
+          <div class="muni-chips" id="genEstadoChips"></div>
+        </div>
+        <div class="filters-foot" style="margin-top:14px">
+          <span class="count">Mostrando <b id="genCount">0</b> de <b id="genTotal">0</b> registros</span>
+          <button class="btn ghost" id="genReset">&#8635; Limpiar</button>
+          <button class="btn ghost" id="genExcel">&#128202; Descargar .xls</button>
+          <button class="btn teal" id="genCsv">&#10515; Exportar CSV</button>
         </div>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Artículo</th><th>Nombre / Responsable</th><th>NIT</th>
-            <th>Centro de costos</th><th>Placa</th><th>Numeración física</th>
-            <th class="r">Cant.</th><th class="r">Valor unit.</th>
-          </tr></thead>
-          <tbody id="tbody"></tbody>
-        </table>
+
+      <div class="kpis" id="genKpis"></div>
+
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-head">
+          <h3><span class="acc" style="background:var(--sky)"></span>Registros por descripcion_estado</h3>
+        </div>
+        <div class="chart-wrap" style="height:320px"><canvas id="genChart"></canvas></div>
       </div>
-      <div class="pager">
-        <button class="btn ghost" id="prevPage">&#8249; Anterior</button>
-        <span id="pageInfo">Página 1</span>
-        <button class="btn ghost" id="nextPage">Siguiente &#8250;</button>
+
+      <div class="card">
+        <div class="card-head">
+          <h3><span class="acc" style="background:var(--violet)"></span>Detalle del inventario general</h3>
+          <span style="font-size:.78rem;color:var(--txt-dim)">Página <b id="genPageInfo" class="mono">1</b></span>
+        </div>
+        <div class="table-wrap" style="max-height:560px">
+          <table id="genTable">
+            <thead><tr id="genThead"></tr></thead>
+            <tbody id="genTbody"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <button class="btn ghost" id="genPrev">&#8249; Anterior</button>
+          <span id="genPageInfo2">Página 1</span>
+          <button class="btn ghost" id="genNext">Siguiente &#8250;</button>
+        </div>
       </div>
     </div>
   </section>
@@ -489,13 +506,9 @@ function ingest(rows){
 function showData(){
   $("#panelEmpty").style.display="none";
   $("#panelContent").style.display="block";
-  $("#filtrosEmpty").style.display="none";
-  $("#filtrosContent").style.display="block";
   $("#btnSave").disabled = !fb.db;
   buildPanelOptions();
   refreshPanel();
-  buildFilterOptions();
-  applyFilters();
 }
 
 /* ====== Filtros del Panel (combos con búsqueda) ====== */
@@ -885,73 +898,206 @@ function makeCombo(mountSel, allLabel, onChange){
     reset(){ state.sel.clear(); input.value=allLabel; menu.classList.remove("open"); } };
 }
 
-const combos={
-  articulo: makeCombo("#cArticulo","Todos los artículos",()=>{page=1;applyFilters();}),
-  nit:      makeCombo("#cNit","Todos los NIT",()=>{page=1;applyFilters();}),
-  centro:   makeCombo("#cCentro","Todos los centros",()=>{page=1;applyFilters();}),
-  placa:    makeCombo("#cPlaca","Todas las placas",()=>{page=1;applyFilters();}),
+/* ============================================================
+   PESTAÑA: INVENTARIO GENERAL (archivo independiente)
+   ============================================================ */
+let GEN_ROWS=[];      // todas las filas (objetos col->valor)
+let GEN_COLS=[];      // nombres de columnas
+let GEN_VIEW=[];      // filas tras filtro de estado
+let genEstadoCol="";  // columna usada como descripcion_estado
+const genEstadoSel=new Set();
+let genPage=1;
+const GEN_PER=60;
+let genChart=null;
+
+// vocabulario típico de estados para autodetección cuando no hay encabezados
+const ESTADO_VOCAB=["uso","baja","reintegro","servicio","activo","inactivo","inservible",
+  "obsoleto","bueno","regular","malo","reintegrado","prestamo","devolutivo","consumo","dado de baja"];
+
+$("#genInput").addEventListener("change",e=>{ if(e.target.files[0]) readGen(e.target.files[0]); });
+function dropGen(e){ e.preventDefault(); e.currentTarget.classList.remove("drop");
+  if(e.dataTransfer.files[0]) readGen(e.dataTransfer.files[0]); }
+
+function readGen(file){
+  toast("Leyendo "+file.name+"…");
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      // matriz de filas para detectar si hay encabezados
+      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:false});
+      ingestGen(aoa);
+    }catch(err){ console.error(err); toast("No se pudo leer el archivo","err"); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ¿la primera fila parece encabezado? (contiene nombres conocidos o texto sin números)
+function looksLikeHeader(row){
+  const cells=row.map(c=>norm(c));
+  if(cells.some(c=>c.replace(/[ _]/g,"").includes("descripcionestado"))) return true;
+  const known=["articulo","estado","nit","centro_costos","placa","descripcion","valor","cantidad","bodega","dependencia"];
+  const hits=cells.filter(c=>known.some(k=>c.includes(norm(k)))).length;
+  return hits>=3;
+}
+
+function ingestGen(aoa){
+  if(!aoa.length){ toast("El archivo está vacío","err"); return; }
+  const hasHeader=looksLikeHeader(aoa[0]);
+  let cols, body;
+  if(hasHeader){
+    cols=aoa[0].map((c,i)=> String(c).trim() || ("Columna "+(i+1)));
+    body=aoa.slice(1);
+  }else{
+    const n=Math.max(...aoa.slice(0,50).map(r=>r.length));
+    cols=Array.from({length:n},(_,i)=>"Columna "+(i+1));
+    body=aoa;
+  }
+  // de-duplicar nombres
+  const seen={}; cols=cols.map(c=>{ seen[c]=(seen[c]||0)+1; return seen[c]>1?c+" ("+seen[c]+")":c; });
+
+  GEN_COLS=cols;
+  GEN_ROWS=body.filter(r=>r.some(v=>String(v).trim()!=="")).map(r=>{
+    const o={}; cols.forEach((c,i)=>o[c]=r[i]!==undefined?r[i]:""); return o;
+  });
+
+  genEstadoCol=detectEstadoCol();
+  buildGenEstadoColSelect();
+  buildGenEstadoChips();
+  $("#genEmpty").style.display="none";
+  $("#genContent").style.display="block";
+  applyGen();
+  toast(GEN_ROWS.length.toLocaleString("es-CO")+" registros cargados", "ok");
+}
+
+// detecta la columna de estado: por nombre, o por vocabulario de valores
+function detectEstadoCol(){
+  const byName=GEN_COLS.find(c=>norm(c).replace(/[ _]/g,"").includes("descripcionestado"))
+            || GEN_COLS.find(c=>norm(c)==="estado")
+            || GEN_COLS.find(c=>norm(c).includes("estado"));
+  if(byName) return byName;
+  // heurística por valores
+  let best="", bestScore=0;
+  const sample=GEN_ROWS.slice(0,3000);
+  GEN_COLS.forEach(c=>{
+    const vals=new Set(sample.map(r=>norm(r[c])).filter(v=>v));
+    if(vals.size<1||vals.size>15) return;
+    let score=0; vals.forEach(v=>{ if(ESTADO_VOCAB.includes(v)) score++; });
+    if(score>bestScore){ bestScore=score; best=c; }
+  });
+  return best || GEN_COLS[0] || "";
+}
+
+function buildGenEstadoColSelect(){
+  $("#genEstadoCol").innerHTML=GEN_COLS.map(c=>
+    `<option value="${c.replace(/"/g,"&quot;")}" ${c===genEstadoCol?"selected":""}>${c}</option>`).join("");
+}
+$("#genEstadoCol").addEventListener("change",e=>{
+  genEstadoCol=e.target.value; genEstadoSel.clear(); buildGenEstadoChips(); applyGen();
+});
+
+function genEstadoValues(){
+  const m={};
+  GEN_ROWS.forEach(r=>{ const v=(r[genEstadoCol]??"").toString().trim()||"(vacío)"; m[v]=(m[v]||0)+1; });
+  return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+}
+function buildGenEstadoChips(){
+  const arr=genEstadoValues();
+  $("#genEstadoChips").innerHTML=arr.map(([v,n])=>
+    `<span class="muni-chip" data-v="${v.replace(/"/g,"&quot;")}">${v}<span class="n">${n}</span></span>`).join("")
+    || `<span style="font-size:.8rem;color:var(--txt-faint)">Sin valores en esta columna</span>`;
+  $("#genEstadoChips").querySelectorAll(".muni-chip").forEach(ch=>{
+    ch.onclick=()=>{
+      const v=ch.dataset.v;
+      if(genEstadoSel.has(v)){ genEstadoSel.delete(v); ch.classList.remove("on"); }
+      else { genEstadoSel.add(v); ch.classList.add("on"); }
+      applyGen();
+    };
+  });
+}
+
+function applyGen(){
+  genPage=1;
+  GEN_VIEW = genEstadoSel.size===0 ? GEN_ROWS.slice()
+    : GEN_ROWS.filter(r=>genEstadoSel.has((r[genEstadoCol]??"").toString().trim()||"(vacío)"));
+  $("#genCount").textContent=GEN_VIEW.length.toLocaleString("es-CO");
+  $("#genTotal").textContent=GEN_ROWS.length.toLocaleString("es-CO");
+  buildGenKpis();
+  buildGenChart();
+  renderGenTable();
+}
+
+function buildGenKpis(){
+  const estados=new Set(GEN_VIEW.map(r=>(r[genEstadoCol]??"").toString().trim()).filter(Boolean)).size;
+  const cards=[
+    {c:"", l:"Registros (filtro)", v:GEN_VIEW.length.toLocaleString("es-CO"), s:"de "+GEN_ROWS.length.toLocaleString("es-CO")},
+    {c:"k2", l:"Estados distintos", v:estados, s:"en "+genEstadoCol},
+    {c:"k3", l:"Columnas", v:GEN_COLS.length, s:"campos del archivo"},
+    {c:"k4", l:"Estados activos", v:genEstadoSel.size||"Todos", s:"en el filtro"},
+  ];
+  $("#genKpis").innerHTML=cards.map(k=>`
+    <div class="kpi ${k.c}"><div class="label">${k.l}</div>
+      <div class="value">${k.v}</div><div class="sub">${k.s}</div></div>`).join("");
+}
+
+function buildGenChart(){
+  const m={};
+  GEN_VIEW.forEach(r=>{ const v=(r[genEstadoCol]??"").toString().trim()||"(vacío)"; m[v]=(m[v]||0)+1; });
+  const arr=Object.entries(m).sort((a,b)=>b[1]-a[1]);
+  const labels=arr.map(x=>x[0]), values=arr.map(x=>x[1]);
+  if(genChart) genChart.destroy();
+  genChart=new Chart($("#genChart"),{
+    type:"bar",
+    data:{labels,datasets:[{label:"Registros",data:values,
+      backgroundColor:labels.map((_,i)=>COLORS[i%COLORS.length]), borderRadius:6}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},
+        tooltip:{callbacks:{label:c=>" "+Number(c.parsed.y).toLocaleString("es-CO")+" registros"}}},
+      scales:{x:{ticks:{color:"#5b6c80",font:{size:11}},grid:{display:false}},
+              y:{ticks:{color:"#8595a8",precision:0,callback:v=>Number(v).toLocaleString("es-CO")},grid:{color:"#e6ecf3"}}}}
+  });
+}
+
+function renderGenTable(){
+  $("#genThead").innerHTML=GEN_COLS.map(c=>`<th>${c===genEstadoCol?"&#9733; ":""}${c}</th>`).join("");
+  const totalPages=Math.max(1,Math.ceil(GEN_VIEW.length/GEN_PER));
+  if(genPage>totalPages) genPage=totalPages;
+  const slice=GEN_VIEW.slice((genPage-1)*GEN_PER, genPage*GEN_PER);
+  $("#genTbody").innerHTML = slice.length ? slice.map(r=>
+    "<tr>"+GEN_COLS.map(c=>{
+      const val=(r[c]??"").toString();
+      return c===genEstadoCol ? `<td><span class="badge">${val||"—"}</span></td>` : `<td>${val||"—"}</td>`;
+    }).join("")+"</tr>").join("")
+    : `<tr><td colspan="${GEN_COLS.length||1}" style="text-align:center;padding:40px;color:var(--txt-dim)">Sin registros.</td></tr>`;
+  $("#genPageInfo").textContent=genPage; $("#genPageInfo2").textContent=`Página ${genPage} de ${totalPages}`;
+  $("#genPrev").disabled=genPage<=1; $("#genNext").disabled=genPage>=totalPages;
+}
+$("#genPrev").onclick=()=>{ if(genPage>1){genPage--; renderGenTable();} };
+$("#genNext").onclick=()=>{ const tp=Math.ceil(GEN_VIEW.length/GEN_PER); if(genPage<tp){genPage++; renderGenTable();} };
+
+$("#genReset").onclick=()=>{
+  genEstadoSel.clear();
+  $("#genEstadoChips").querySelectorAll(".muni-chip").forEach(c=>c.classList.remove("on"));
+  applyGen();
 };
 
-function buildFilterOptions(){
-  combos.articulo.setOptions(uniq("articulo"));
-  combos.nit.setOptions(uniq("nit"));
-  combos.centro.setOptions(uniq("centro"));
-  combos.placa.setOptions(uniq("placa"));
-  Object.values(combos).forEach(c=>c.reset());
-}
-$("#fSearch").addEventListener("input",()=>{page=1;applyFilters();});
-$("#btnReset").onclick=()=>{
-  Object.values(combos).forEach(c=>c.reset());
-  $("#fSearch").value=""; page=1; applyFilters();
+$("#genExcel").onclick=()=>{
+  if(!GEN_VIEW.length){ toast("No hay registros para descargar","err"); return; }
+  const ws=XLSX.utils.json_to_sheet(GEN_VIEW.map(r=>{ const o={}; GEN_COLS.forEach(c=>o[c]=r[c]); return o; }));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Inventario General");
+  try{ XLSX.writeFile(wb,"inventario_general_filtrado.xls",{bookType:"biff8"}); }
+  catch(e){ XLSX.writeFile(wb,"inventario_general_filtrado.xlsx"); }
+  toast("Excel descargado ("+GEN_VIEW.length+" registros)","ok");
 };
-
-function applyFilters(){
-  const a=new Set(combos.articulo.values), n=new Set(combos.nit.values),
-        c=new Set(combos.centro.values), p=new Set(combos.placa.values),
-        q=norm($("#fSearch").value);
-  VIEW=RAW.filter(r=>
-    (!a.size||a.has(r.articulo))&&(!n.size||n.has(r.nit))&&
-    (!c.size||c.has(r.centro))&&(!p.size||p.has(r.placa))&&
-    (!q || norm(r.nombre).includes(q)||norm(r.numfis).includes(q)||
-           norm(r.codigo).includes(q)||norm(r.articulo).includes(q))
-  );
-  $("#resCount").textContent=VIEW.length.toLocaleString("es-CO");
-  $("#resTotal").textContent=RAW.length.toLocaleString("es-CO");
-  renderTable();
-}
-function renderTable(){
-  const totalPages=Math.max(1,Math.ceil(VIEW.length/PER_PAGE));
-  if(page>totalPages) page=totalPages;
-  const slice=VIEW.slice((page-1)*PER_PAGE,page*PER_PAGE);
-  $("#tbody").innerHTML = slice.length ? slice.map(r=>`
-    <tr>
-      <td><b>${r.articulo}</b></td>
-      <td>${r.nombre||"—"}</td>
-      <td class="mono">${r.nit||"—"}</td>
-      <td>${r.centro}</td>
-      <td><span class="badge">${r.placa||"s/p"}</span></td>
-      <td>${r.numfis||"—"}</td>
-      <td class="r">${r.cantidad}</td>
-      <td class="r">${money(r.valor)}</td>
-    </tr>`).join("")
-    : `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--txt-dim)">Sin resultados para los filtros aplicados.</td></tr>`;
-  $("#pageInfo").textContent=`Página ${page} de ${totalPages}`;
-  $("#prevPage").disabled=page<=1; $("#nextPage").disabled=page>=totalPages;
-}
-$("#prevPage").onclick=()=>{if(page>1){page--;renderTable();}};
-$("#nextPage").onclick=()=>{const tp=Math.ceil(VIEW.length/PER_PAGE);if(page<tp){page++;renderTable();}};
-
-/* ====== Exportar CSV ====== */
-$("#btnExport").onclick=()=>{
-  if(!VIEW.length){toast("No hay datos para exportar","err");return;}
-  const head=["articulo","nombre","nit","centro_costos","placa","numeracion_fisica","cantidad","valor_articulo"];
-  const lines=[head.join(";")].concat(VIEW.map(r=>
-    [r.articulo,r.nombre,r.nit,r.centro,r.placa,r.numfis,r.cantidad,r.valor]
-      .map(v=>`"${String(v).replace(/"/g,'""')}"`).join(";")));
+$("#genCsv").onclick=()=>{
+  if(!GEN_VIEW.length){ toast("No hay datos para exportar","err"); return; }
+  const lines=[GEN_COLS.join(";")].concat(GEN_VIEW.map(r=>
+    GEN_COLS.map(c=>`"${String(r[c]??"").replace(/"/g,'""')}"`).join(";")));
   const blob=new Blob(["\uFEFF"+lines.join("\n")],{type:"text/csv;charset=utf-8;"});
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob); a.download="inventario_arauca_filtrado.csv"; a.click();
-  toast("CSV exportado ("+VIEW.length+" filas)","ok");
+  a.href=URL.createObjectURL(blob); a.download="inventario_general_filtrado.csv"; a.click();
+  toast("CSV exportado ("+GEN_VIEW.length+" filas)","ok");
 };
 
 /* ====== Firebase ====== */
