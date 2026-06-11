@@ -861,10 +861,12 @@ function makeCombo(mountSel, allLabel, onChange){
   function setOptions(opts){ state.options=opts.map(normOpt); }
   function labelFor(v){ const o=state.options.find(o=>o.v===v); return o?o.t:v; }
   function displayText(){
-    const n=state.sel.size;
-    if(n===0) return allLabel;
-    if(n===1) return labelFor([...state.sel][0]);
-    return n+" seleccionados";
+    const arr=[...state.sel];
+    if(arr.length===0) return allLabel;
+    const names=arr.map(labelFor);
+    let s=names.join(", ");
+    if(s.length>46) s=names[0]+"  +"+(names.length-1)+" más";
+    return s;
   }
   function render(q){
     const nq=norm(q);
@@ -980,7 +982,7 @@ function ingestGen(aoa){
   ["genEstadoCol","genCentroCol","genArticuloCol"].forEach(id=>{
     const cur=id==="genEstadoCol"?genEstadoCol:id==="genCentroCol"?genCentroCol:genArticuloCol;
     $("#"+id).innerHTML=GEN_COLS.map(c=>
-      `<option value="${c.replace(/"/g,"&quot;")}" ${c===cur?"selected":""}>${c}</option>`).join("");
+      `<option value="${c.replace(/"/g,"&quot;")}" ${c===cur?"selected":""}>${colLabel(c)}</option>`).join("");
   });
 
   if(!genCombos){
@@ -1043,6 +1045,15 @@ $("#genArticuloCol").addEventListener("change",e=>{ genArticuloCol=e.target.valu
 function uniqGen(col){
   return [...new Set(GEN_ROWS.map(r=>String(r[col]??"").trim()).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b,"es"));
+}
+// etiqueta de columna: si no tiene encabezado real, muestra un ejemplo de su contenido
+function colLabel(c){
+  if(!/^Columna \d+$/.test(c)) return c;
+  const sample=GEN_ROWS.slice(0,500);
+  const vals=[...new Set(sample.map(r=>String(r[c]??"").trim()).filter(Boolean))].slice(0,3);
+  let prev=vals.join(", ");
+  if(prev.length>50) prev=prev.slice(0,50)+"…";
+  return prev ? c+" · "+prev : c;
 }
 function refreshGenFilters(){
   buildGenMuniChips();
