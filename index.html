@@ -130,6 +130,9 @@
   .chart-scroll::-webkit-scrollbar-thumb{background:var(--line); border-radius:8px}
   .nit-name{font-size:.8rem; font-weight:600; color:var(--teal-deep); margin-right:auto}
   .nit-name:empty{display:none}
+  .gen-sel{width:100%; background:var(--bg); border:1px solid var(--line); color:var(--txt);
+    padding:10px 12px; border-radius:10px; font-family:'DM Sans'; font-size:.86rem}
+  .gen-sel:focus{outline:none; border-color:var(--amber); box-shadow:0 0 0 3px rgba(240,137,12,.15)}
   /* combo con búsqueda */
   .combo{position:relative}
   .combo-input{width:100%; background:var(--bg); border:1px solid var(--line); color:var(--txt);
@@ -321,17 +324,25 @@
 
     <div id="genContent" style="display:none">
       <div class="filters panel-filters">
-        <div class="muni-bar">
-          <span class="muni-title">Columna de estado:</span>
-          <select id="genEstadoCol" style="background:var(--bg);border:1px solid var(--line);color:var(--txt);padding:8px 11px;border-radius:9px;font-family:'DM Sans';font-size:.84rem;max-width:340px"></select>
-          <span style="font-size:.74rem;color:var(--txt-faint)">(se detecta automáticamente; puedes cambiarla)</span>
+        <div class="filters-grid">
+          <div class="fld"><label>Columna de estado</label><select id="genEstadoCol" class="gen-sel"></select></div>
+          <div class="fld"><label>Columna centro de costos</label><select id="genCentroCol" class="gen-sel"></select></div>
+          <div class="fld"><label>Columna artículo</label><select id="genArticuloCol" class="gen-sel"></select></div>
         </div>
-        <div class="muni-bar" style="border-bottom:none;padding-bottom:0;margin-bottom:0">
+        <div class="muni-bar" style="margin-top:16px">
+          <span class="muni-title">Municipios:</span>
+          <div class="muni-chips" id="genMuniChips"></div>
+        </div>
+        <div class="muni-bar">
           <span class="muni-title">descripcion_estado:</span>
           <div class="muni-chips" id="genEstadoChips"></div>
         </div>
+        <div class="filters-grid" style="margin-top:4px">
+          <div class="fld"><label>Centro de costos</label><div class="combo" id="genCentroCombo"></div></div>
+          <div class="fld"><label>Artículo</label><div class="combo" id="genArticuloCombo"></div></div>
+        </div>
         <div class="filters-foot" style="margin-top:14px">
-          <span class="count">Mostrando <b id="genCount">0</b> de <b id="genTotal">0</b> registros</span>
+          <span class="count">Mostrando <b id="genCount">0</b> de <b id="genTotal">0</b> registros <span id="genDupNote" style="color:var(--teal-deep);font-weight:600"></span></span>
           <button class="btn ghost" id="genReset">&#8635; Limpiar</button>
           <button class="btn ghost" id="genExcel">&#128202; Descargar .xls</button>
           <button class="btn teal" id="genCsv">&#10515; Exportar CSV</button>
@@ -850,10 +861,12 @@ function makeCombo(mountSel, allLabel, onChange){
   function setOptions(opts){ state.options=opts.map(normOpt); }
   function labelFor(v){ const o=state.options.find(o=>o.v===v); return o?o.t:v; }
   function displayText(){
-    const n=state.sel.size;
-    if(n===0) return allLabel;
-    if(n===1) return labelFor([...state.sel][0]);
-    return n+" seleccionados";
+    const arr=[...state.sel];
+    if(arr.length===0) return allLabel;
+    const names=arr.map(labelFor);
+    let s=names.join(", ");
+    if(s.length>46) s=names[0]+"  +"+(names.length-1)+" más";
+    return s;
   }
   function render(q){
     const nq=norm(q);
@@ -903,9 +916,12 @@ function makeCombo(mountSel, allLabel, onChange){
    ============================================================ */
 let GEN_ROWS=[];      // todas las filas (objetos col->valor)
 let GEN_COLS=[];      // nombres de columnas
-let GEN_VIEW=[];      // filas tras filtro de estado
-let genEstadoCol="";  // columna usada como descripcion_estado
+let GEN_VIEW=[];      // filas tras filtros
+let genEstadoCol="", genCentroCol="", genArticuloCol="", genPlacaCol="";
+let genDupRemoved=0;
 const genEstadoSel=new Set();
+const genMuniSel=new Set();
+let genCombos=null;
 let genPage=1;
 const GEN_PER=60;
 let genChart=null;
@@ -913,6 +929,7 @@ let genChart=null;
 // vocabulario típico de estados para autodetección cuando no hay encabezados
 const ESTADO_VOCAB=["uso","baja","reintegro","servicio","activo","inactivo","inservible",
   "obsoleto","bueno","regular","malo","reintegrado","prestamo","devolutivo","consumo","dado de baja"];
+const CC_KW=["juzgado","seccional","consejo","tribunal","fiscalia","direccion","sala","unidad","despacho","centro de"];
 
 $("#genInput").addEventListener("change",e=>{ if(e.target.files[0]) readGen(e.target.files[0]); });
 function dropGen(e){ e.preventDefault(); e.currentTarget.classList.remove("drop");
@@ -920,12 +937,22 @@ function dropGen(e){ e.preventDefault(); e.currentTarget.classList.remove("drop"
 
 function readGen(file){
   toast("Leyendo "+file.name+"…");
+  const isCsv=/\.csv$/i.test(file.name) || file.type==="text/csv";
   const reader=new FileReader();
   reader.onload=ev=>{
     try{
-      const wb=XLSX.read(ev.target.result,{type:"array"});
+      let wb;
+      if(isCsv){
+        // CSV: decodificar respetando acentos (UTF-8 y, si falla, ISO-8859-1/latin-1)
+        const buf=new Uint8Array(ev.target.result);
+        let text;
+        try{ text=new TextDecoder("utf-8",{fatal:true}).decode(buf); }
+        catch(_){ text=new TextDecoder("iso-8859-1").decode(buf); }
+        wb=XLSX.read(text,{type:"string"});
+      }else{
+        wb=XLSX.read(ev.target.result,{type:"array"});
+      }
       const ws=wb.Sheets[wb.SheetNames[0]];
-      // matriz de filas para detectar si hay encabezados
       const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:false});
       ingestGen(aoa);
     }catch(err){ console.error(err); toast("No se pudo leer el archivo","err"); }
@@ -933,7 +960,6 @@ function readGen(file){
   reader.readAsArrayBuffer(file);
 }
 
-// ¿la primera fila parece encabezado? (contiene nombres conocidos o texto sin números)
 function looksLikeHeader(row){
   const cells=row.map(c=>norm(c));
   if(cells.some(c=>c.replace(/[ _]/g,"").includes("descripcionestado"))) return true;
@@ -954,7 +980,6 @@ function ingestGen(aoa){
     cols=Array.from({length:n},(_,i)=>"Columna "+(i+1));
     body=aoa;
   }
-  // de-duplicar nombres
   const seen={}; cols=cols.map(c=>{ seen[c]=(seen[c]||0)+1; return seen[c]>1?c+" ("+seen[c]+")":c; });
 
   GEN_COLS=cols;
@@ -962,67 +987,156 @@ function ingestGen(aoa){
     const o={}; cols.forEach((c,i)=>o[c]=r[i]!==undefined?r[i]:""); return o;
   });
 
-  genEstadoCol=detectEstadoCol();
-  buildGenEstadoColSelect();
-  buildGenEstadoChips();
+  // ---- eliminar filas con placa repetida (una fila por placa) ----
+  genPlacaCol = GEN_COLS.find(c=>norm(c)==="placa")
+            || GEN_COLS.find(c=>norm(c).includes("placa") && !norm(c).includes("externa") && !norm(c).includes("observ"))
+            || GEN_COLS[0];
+  const antesDedup=GEN_ROWS.length;
+  const placasVistas=new Set(); const filasUnicas=[];
+  for(const r of GEN_ROWS){
+    const p=String(r[genPlacaCol]??"").trim();
+    if(p){ if(placasVistas.has(p)) continue; placasVistas.add(p); }
+    filasUnicas.push(r);
+  }
+  genDupRemoved=antesDedup-filasUnicas.length;
+  GEN_ROWS=filasUnicas;
+
+  genEstadoCol=detectCol("estado");
+  genCentroCol=detectCol("centro");
+  genArticuloCol=detectCol("articulo");
+
+  ["genEstadoCol","genCentroCol","genArticuloCol"].forEach(id=>{
+    const cur=id==="genEstadoCol"?genEstadoCol:id==="genCentroCol"?genCentroCol:genArticuloCol;
+    $("#"+id).innerHTML=GEN_COLS.map(c=>
+      `<option value="${c.replace(/"/g,"&quot;")}" ${c===cur?"selected":""}>${colLabel(c)}</option>`).join("");
+  });
+
+  if(!genCombos){
+    genCombos={
+      centro:   makeCombo("#genCentroCombo","Todos los centros",applyGen),
+      articulo: makeCombo("#genArticuloCombo","Todos los artículos",applyGen),
+    };
+  }
+  genEstadoSel.clear(); genMuniSel.clear();
+  refreshGenFilters();
   $("#genEmpty").style.display="none";
   $("#genContent").style.display="block";
   applyGen();
-  toast(GEN_ROWS.length.toLocaleString("es-CO")+" registros cargados", "ok");
+  const msgDedup = genDupRemoved>0
+    ? `${GEN_ROWS.length.toLocaleString("es-CO")} registros · ${genDupRemoved.toLocaleString("es-CO")} placas repetidas eliminadas`
+    : `${GEN_ROWS.length.toLocaleString("es-CO")} registros cargados`;
+  toast(msgDedup, "ok");
 }
 
-// detecta la columna de estado: por nombre, o por vocabulario de valores
-function detectEstadoCol(){
-  const byName=GEN_COLS.find(c=>norm(c).replace(/[ _]/g,"").includes("descripcionestado"))
-            || GEN_COLS.find(c=>norm(c)==="estado")
-            || GEN_COLS.find(c=>norm(c).includes("estado"));
+// detecta columna por tipo: 'estado' | 'centro' | 'articulo'
+function detectCol(kind){
+  const sample=GEN_ROWS.slice(0,4000);
+  const distinctOf=c=>new Set(sample.map(r=>String(r[c]).trim()).filter(Boolean));
+  if(kind==="estado"){
+    const byName=GEN_COLS.find(c=>norm(c).replace(/[ _]/g,"").includes("descripcionestado"))
+              || GEN_COLS.find(c=>norm(c)==="estado") || GEN_COLS.find(c=>norm(c).includes("estado"));
+    if(byName) return byName;
+    let best="",bs=0;
+    GEN_COLS.forEach(c=>{ const v=distinctOf(c); if(v.size<1||v.size>15) return;
+      let s=0; v.forEach(x=>{ if(ESTADO_VOCAB.includes(norm(x))) s++; }); if(s>bs){bs=s;best=c;} });
+    return best||GEN_COLS[0]||"";
+  }
+  if(kind==="centro"){
+    const byName=GEN_COLS.find(c=>norm(c).replace(/[ _]/g,"").includes("centrocostos"))
+              || GEN_COLS.find(c=>norm(c).includes("centro")) || GEN_COLS.find(c=>norm(c).includes("dependencia"));
+    if(byName) return byName;
+    let best="",bs=0;
+    GEN_COLS.forEach(c=>{ const v=[...distinctOf(c)]; if(v.length<2) return;
+      let s=v.filter(x=>CC_KW.some(k=>norm(x).includes(k))).length; if(s>bs){bs=s;best=c;} });
+    return best||GEN_COLS[0]||"";
+  }
+  // articulo: por nombre (articulo/descripcion del bien) o, si no, columna de texto con más valores distintos
+  const byName=GEN_COLS.find(c=>norm(c)==="articulo")
+            || GEN_COLS.find(c=>norm(c)==="descripcion")
+            || GEN_COLS.find(c=>norm(c).includes("articulo")&&!norm(c).includes("valor")&&!norm(c).includes("tipo"));
   if(byName) return byName;
-  // heurística por valores
-  let best="", bestScore=0;
-  const sample=GEN_ROWS.slice(0,3000);
+  let best="",bs=0;
   GEN_COLS.forEach(c=>{
-    const vals=new Set(sample.map(r=>norm(r[c])).filter(v=>v));
-    if(vals.size<1||vals.size>15) return;
-    let score=0; vals.forEach(v=>{ if(ESTADO_VOCAB.includes(v)) score++; });
-    if(score>bestScore){ bestScore=score; best=c; }
+    if(c===genEstadoCol||c===genCentroCol) return;
+    const vals=sample.map(r=>String(r[c]).trim()).filter(Boolean);
+    if(!vals.length) return;
+    const textRatio=vals.filter(v=>!v.replace(/[.,\-\s]/g,"").match(/^\d+$/)).length/vals.length;
+    if(textRatio<0.6) return;            // descartar columnas numéricas/códigos
+    if(vals.some(v=>CC_KW.some(k=>norm(v).includes(k)))) return;
+    const d=new Set(vals).size;
+    if(d>bs){ bs=d; best=c; }
   });
-  return best || GEN_COLS[0] || "";
+  return best||GEN_COLS[0]||"";
 }
 
-function buildGenEstadoColSelect(){
-  $("#genEstadoCol").innerHTML=GEN_COLS.map(c=>
-    `<option value="${c.replace(/"/g,"&quot;")}" ${c===genEstadoCol?"selected":""}>${c}</option>`).join("");
-}
-$("#genEstadoCol").addEventListener("change",e=>{
-  genEstadoCol=e.target.value; genEstadoSel.clear(); buildGenEstadoChips(); applyGen();
-});
+$("#genEstadoCol").addEventListener("change",e=>{ genEstadoCol=e.target.value; genEstadoSel.clear(); refreshGenFilters(); applyGen(); });
+$("#genCentroCol").addEventListener("change",e=>{ genCentroCol=e.target.value; genMuniSel.clear(); refreshGenFilters(); applyGen(); });
+$("#genArticuloCol").addEventListener("change",e=>{ genArticuloCol=e.target.value; refreshGenFilters(); applyGen(); });
 
-function genEstadoValues(){
-  const m={};
-  GEN_ROWS.forEach(r=>{ const v=(r[genEstadoCol]??"").toString().trim()||"(vacío)"; m[v]=(m[v]||0)+1; });
-  return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+function uniqGen(col){
+  return [...new Set(GEN_ROWS.map(r=>String(r[col]??"").trim()).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,"es"));
+}
+// etiqueta de columna: si no tiene encabezado real, muestra un ejemplo de su contenido
+function colLabel(c){
+  if(!/^Columna \d+$/.test(c)) return c;
+  const sample=GEN_ROWS.slice(0,500);
+  const vals=[...new Set(sample.map(r=>String(r[c]??"").trim()).filter(Boolean))].slice(0,3);
+  let prev=vals.join(", ");
+  if(prev.length>50) prev=prev.slice(0,50)+"…";
+  return prev ? c+" · "+prev : c;
+}
+function refreshGenFilters(){
+  buildGenMuniChips();
+  buildGenEstadoChips();
+  genCombos.centro.setOptions(uniqGen(genCentroCol));
+  genCombos.articulo.setOptions(uniqGen(genArticuloCol));
+  genCombos.centro.reset(); genCombos.articulo.reset();
+}
+
+function buildGenMuniChips(){
+  const counts={};
+  GEN_ROWS.forEach(r=>{ const m=muniOf(r[genCentroCol]); counts[m]=(counts[m]||0)+1; });
+  const present=MUNIS.map(m=>m.label).filter(l=>counts[l]);
+  if(counts["Otro"]) present.push("Otro");
+  $("#genMuniChips").innerHTML=present.map(l=>
+    `<span class="muni-chip" data-m="${l}">${l}<span class="n">${counts[l]}</span></span>`).join("")
+    || `<span style="font-size:.8rem;color:var(--txt-faint)">Sin municipios detectados</span>`;
+  $("#genMuniChips").querySelectorAll(".muni-chip").forEach(ch=>{
+    ch.onclick=()=>{ const m=ch.dataset.m;
+      if(genMuniSel.has(m)){ genMuniSel.delete(m); ch.classList.remove("on"); }
+      else { genMuniSel.add(m); ch.classList.add("on"); }
+      applyGen(); };
+  });
 }
 function buildGenEstadoChips(){
-  const arr=genEstadoValues();
+  const m={};
+  GEN_ROWS.forEach(r=>{ const v=(r[genEstadoCol]??"").toString().trim()||"(vacío)"; m[v]=(m[v]||0)+1; });
+  const arr=Object.entries(m).sort((a,b)=>b[1]-a[1]);
   $("#genEstadoChips").innerHTML=arr.map(([v,n])=>
     `<span class="muni-chip" data-v="${v.replace(/"/g,"&quot;")}">${v}<span class="n">${n}</span></span>`).join("")
     || `<span style="font-size:.8rem;color:var(--txt-faint)">Sin valores en esta columna</span>`;
   $("#genEstadoChips").querySelectorAll(".muni-chip").forEach(ch=>{
-    ch.onclick=()=>{
-      const v=ch.dataset.v;
+    ch.onclick=()=>{ const v=ch.dataset.v;
       if(genEstadoSel.has(v)){ genEstadoSel.delete(v); ch.classList.remove("on"); }
       else { genEstadoSel.add(v); ch.classList.add("on"); }
-      applyGen();
-    };
+      applyGen(); };
   });
 }
 
 function applyGen(){
   genPage=1;
-  GEN_VIEW = genEstadoSel.size===0 ? GEN_ROWS.slice()
-    : GEN_ROWS.filter(r=>genEstadoSel.has((r[genEstadoCol]??"").toString().trim()||"(vacío)"));
+  const cen=new Set(genCombos.centro.values), art=new Set(genCombos.articulo.values);
+  GEN_VIEW=GEN_ROWS.filter(r=>{
+    const est=(r[genEstadoCol]??"").toString().trim()||"(vacío)";
+    return (genEstadoSel.size===0||genEstadoSel.has(est))
+      && (genMuniSel.size===0||genMuniSel.has(muniOf(r[genCentroCol])))
+      && (!cen.size||cen.has(String(r[genCentroCol]??"").trim()))
+      && (!art.size||art.has(String(r[genArticuloCol]??"").trim()));
+  });
   $("#genCount").textContent=GEN_VIEW.length.toLocaleString("es-CO");
   $("#genTotal").textContent=GEN_ROWS.length.toLocaleString("es-CO");
+  $("#genDupNote").textContent = genDupRemoved>0 ? `(✓ ${genDupRemoved.toLocaleString("es-CO")} placas duplicadas eliminadas)` : "";
   buildGenKpis();
   buildGenChart();
   renderGenTable();
@@ -1030,11 +1144,13 @@ function applyGen(){
 
 function buildGenKpis(){
   const estados=new Set(GEN_VIEW.map(r=>(r[genEstadoCol]??"").toString().trim()).filter(Boolean)).size;
+  const munis=new Set(GEN_VIEW.map(r=>muniOf(r[genCentroCol]))).size;
+  const arts=new Set(GEN_VIEW.map(r=>String(r[genArticuloCol]??"").trim()).filter(Boolean)).size;
   const cards=[
     {c:"", l:"Registros (filtro)", v:GEN_VIEW.length.toLocaleString("es-CO"), s:"de "+GEN_ROWS.length.toLocaleString("es-CO")},
-    {c:"k2", l:"Estados distintos", v:estados, s:"en "+genEstadoCol},
-    {c:"k3", l:"Columnas", v:GEN_COLS.length, s:"campos del archivo"},
-    {c:"k4", l:"Estados activos", v:genEstadoSel.size||"Todos", s:"en el filtro"},
+    {c:"k2", l:"Estados distintos", v:estados, s:"en descripcion_estado"},
+    {c:"k3", l:"Municipios", v:munis, s:"en la vista"},
+    {c:"k4", l:"Artículos distintos", v:arts, s:"en la vista"},
   ];
   $("#genKpis").innerHTML=cards.map(k=>`
     <div class="kpi ${k.c}"><div class="label">${k.l}</div>
@@ -1060,7 +1176,10 @@ function buildGenChart(){
 }
 
 function renderGenTable(){
-  $("#genThead").innerHTML=GEN_COLS.map(c=>`<th>${c===genEstadoCol?"&#9733; ":""}${c}</th>`).join("");
+  $("#genThead").innerHTML=GEN_COLS.map(c=>{
+    const star=(c===genEstadoCol||c===genCentroCol||c===genArticuloCol)?"&#9733; ":"";
+    return `<th>${star}${c}</th>`;
+  }).join("");
   const totalPages=Math.max(1,Math.ceil(GEN_VIEW.length/GEN_PER));
   if(genPage>totalPages) genPage=totalPages;
   const slice=GEN_VIEW.slice((genPage-1)*GEN_PER, genPage*GEN_PER);
@@ -1077,8 +1196,10 @@ $("#genPrev").onclick=()=>{ if(genPage>1){genPage--; renderGenTable();} };
 $("#genNext").onclick=()=>{ const tp=Math.ceil(GEN_VIEW.length/GEN_PER); if(genPage<tp){genPage++; renderGenTable();} };
 
 $("#genReset").onclick=()=>{
-  genEstadoSel.clear();
+  genEstadoSel.clear(); genMuniSel.clear();
   $("#genEstadoChips").querySelectorAll(".muni-chip").forEach(c=>c.classList.remove("on"));
+  $("#genMuniChips").querySelectorAll(".muni-chip").forEach(c=>c.classList.remove("on"));
+  genCombos.centro.reset(); genCombos.articulo.reset();
   applyGen();
 };
 
